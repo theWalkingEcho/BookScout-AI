@@ -1,4 +1,4 @@
-neo4j==5.0.0
-requests==2.0.0
-beautifulsoup4==4.0.0
-python-dotenv==1.0.0
+neo4j==5.28.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+python-dotenv==1.0.1
