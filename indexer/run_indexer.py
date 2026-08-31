@@ -31,7 +31,14 @@ def main():
     parser.add_argument(
         "--embed",
         action="store_true",
-        help="Generate and store text embeddings for books after scraping",
+        default=True,
+        help="Generate and store text embeddings for books after scraping (default: True)",
+    )
+    parser.add_argument(
+        "--no-embed",
+        action="store_false",
+        dest="embed",
+        help="Disable generating and storing text embeddings",
     )
     parser.add_argument(
         "--reembed",
@@ -134,11 +141,11 @@ def main():
         else:
             logger.info("No scrapers configured — skipping scrape phase.")
 
-        # --- Embedding generation (optional) ---
+        # --- Embedding generation ---
         if args.embed:
             if not GEMINI_API_KEY:
-                logger.error(
-                    "--embed flag requires GEMINI_API_KEY in .env. Skipping embedding."
+                logger.warning(
+                    "Embedding generation skipped: GEMINI_API_KEY is not set."
                 )
             else:
                 logger.info("Starting embedding generation phase…")
