@@ -1,3 +1,4 @@
+import json
 import os
 
 try:
@@ -19,33 +20,11 @@ SCRAPE_LIMIT = int(os.getenv("SCRAPE_LIMIT")) if os.getenv("SCRAPE_LIMIT") else 
 SCRAPE_BATCH_SIZE = int(os.getenv("SCRAPE_BATCH_SIZE", "50"))
 SCRAPE_WORKERS = int(os.getenv("SCRAPE_WORKERS", "8"))
 
-STORE_CONFIGS = [
-    {
-        "name": "Book Bazaar LK",
-        # NOTE: removed the trailing '#' fragment – it prevents the crawler
-        # from leaving the landing page entirely.
-        "base_url": "https://bookbazaarlk.com/shop/",
-        "currency": "LKR",
-    },
-    {
-        "name": "Jump Books LK",
-        "base_url": "https://jumpbooks.lk",
-        "currency": "LKR",
-    },
-    # TODO: add more Sri Lankan bookstores below
-    {
-        "name": "Vijitha Yapa",
-        "base_url": "https://www.vijithayapa.com/shop/",
-        "currency": "LKR",
-    },
-    {
-        "name": "Sarasavi Bookshop",
-        "base_url": "https://www.sarasavi.lk",
-        "currency": "LKR",
-    },
-    {
-        "name": "Makeen Books",
-        "base_url": "https://makeenbooks.com",
-        "currency": "LKR",
-    },
-]
+_store_configs_env = os.getenv("STORE_CONFIGS_JSON")
+if _store_configs_env:
+    try:
+        STORE_CONFIGS = json.loads(_store_configs_env)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"STORE_CONFIGS_JSON is not valid JSON: {e}") from e
+else:
+    STORE_CONFIGS = None
