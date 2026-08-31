@@ -2,4 +2,5 @@ neo4j==5.28.1
 requests==2.32.3
 beautifulsoup4==4.12.3
 python-dotenv==1.0.1
-google-genai==2.20.0
+google-genai==2.20.0
+cloudscraper==1.2.71

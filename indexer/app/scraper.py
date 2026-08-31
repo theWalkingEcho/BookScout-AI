@@ -31,6 +31,11 @@ from urllib.parse import urldefrag, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    import cloudscraper
+except ImportError:
+    cloudscraper = None
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -106,7 +111,20 @@ class StoreScraper:
         self.base_url = base_url
         self.currency = currency
         self.request_delay = request_delay
-        self.session = requests.Session()
+        if cloudscraper:
+            try:
+                self.session = cloudscraper.create_scraper(
+                    browser={
+                        'browser': 'chrome',
+                        'platform': 'windows',
+                        'mobile': False
+                    }
+                )
+            except Exception as e:
+                logger.warning("Failed to initialize cloudscraper: %s. Falling back to requests.Session()", e)
+                self.session = requests.Session()
+        else:
+            self.session = requests.Session()
         self.session.headers.update(self.DEFAULT_HEADERS)
 
     # ------------------------------------------------------------------
