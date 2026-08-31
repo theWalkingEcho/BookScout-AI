@@ -26,11 +26,19 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-004")
 EMBEDDING_DIMENSIONS = 1536  # Fixed: gemini-embedding-004 output dimension
 
+import ast
+
 _store_configs_env = os.getenv("STORE_CONFIGS_JSON")
 if _store_configs_env:
     try:
         STORE_CONFIGS = json.loads(_store_configs_env)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"STORE_CONFIGS_JSON is not valid JSON: {e}") from e
+    except json.JSONDecodeError as json_err:
+        try:
+            STORE_CONFIGS = ast.literal_eval(_store_configs_env)
+        except Exception as ast_err:
+            raise ValueError(
+                f"STORE_CONFIGS_JSON is not valid JSON or Python literal. "
+                f"JSON Error: {json_err}. AST Error: {ast_err}"
+            ) from json_err
 else:
     STORE_CONFIGS = None
