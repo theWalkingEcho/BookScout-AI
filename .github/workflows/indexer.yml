@@ -42,6 +42,8 @@ jobs:
           NEO4J_USER: ${{ secrets.NEO4J_USER }}
           NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
           NEO4J_DATABASE: ${{ secrets.NEO4J_DATABASE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STORE_CONFIGS_JSON: ${{ secrets.STORE_CONFIGS_JSON }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
