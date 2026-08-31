@@ -16,7 +16,8 @@ NEO4J_CONFIG = {
 
 # Maximum number of product pages to scrape per run.
 # Set to None to scrape everything found (may be slow).
-SCRAPE_LIMIT = int(os.getenv("SCRAPE_LIMIT")) if os.getenv("SCRAPE_LIMIT") else None
+_scrape_limit_env = os.getenv("SCRAPE_LIMIT")
+SCRAPE_LIMIT = int(_scrape_limit_env) if _scrape_limit_env and _scrape_limit_env.strip().lower() not in ("none", "") else None
 SCRAPE_BATCH_SIZE = int(os.getenv("SCRAPE_BATCH_SIZE", "50"))
 SCRAPE_WORKERS = int(os.getenv("SCRAPE_WORKERS", "8"))
 

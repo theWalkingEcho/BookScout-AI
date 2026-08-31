@@ -59,10 +59,21 @@ def main():
         database=NEO4J_CONFIG.get("database"),
     )
 
-    scrapers = [
-        StoreScraper(store["name"], store["base_url"], store["currency"])
-        for store in STORE_CONFIGS
-    ]
+    if STORE_CONFIGS is None:
+        if args.embed:
+            logger.info("STORE_CONFIGS_JSON not set — running in embed-only mode (no scraping).")
+            scrapers = []
+        else:
+            logger.error(
+                "STORE_CONFIGS_JSON is not set. "
+                "Set it in .env or pass --embed to run embedding only."
+            )
+            return
+    else:
+        scrapers = [
+            StoreScraper(store["name"], store["base_url"], store["currency"])
+            for store in STORE_CONFIGS
+        ]
 
     logger.info("Configured %d store scraper(s)", len(scrapers))
 
@@ -86,37 +97,42 @@ def main():
 
         total_scraped = 0
 
-        for scraped_batch in scraper_runner.run_batches():
-            cleaned = [clean_listing(item) for item in scraped_batch]
+        if scrapers:
+            for scraped_batch in scraper_runner.run_batches():
+                cleaned = [clean_listing(item) for item in scraped_batch]
 
-            scheduler.run_weekly(cleaned, cleanup=False)
+                scheduler.run_weekly(cleaned, cleanup=False)
 
-            total_scraped += len(cleaned)
+                total_scraped += len(cleaned)
 
-            logger.info(
-                "Persisted batch of %d listing(s)",
-                len(cleaned),
-            )
+                logger.info(
+                    "Persisted batch of %d listing(s)",
+                    len(cleaned),
+                )
 
-        logger.info("Scraper produced %d raw listing(s)", total_scraped)
+            logger.info("Scraper produced %d raw listing(s)", total_scraped)
 
-        if total_scraped == 0:
-            logger.warning(
-                "No scraped listings found. Check scraper selectors and store URLs."
-            )
-            return
+            if total_scraped == 0:
+                logger.warning(
+                    "No scraped listings found. Check scraper selectors and store URLs."
+                )
+                if not args.embed:
+                    return
 
-        scheduler.finish_weekly_update()
+            else:
+                scheduler.finish_weekly_update()
 
-        logger.info(
-            "Completed update for %d listing(s)",
-            total_scraped,
-        )
+                logger.info(
+                    "Completed update for %d listing(s)",
+                    total_scraped,
+                )
 
-        print(
-            f"Completed update for {total_scraped} listings "
-            f"at {datetime.utcnow().isoformat()}."
-        )
+                print(
+                    f"Completed update for {total_scraped} listings "
+                    f"at {datetime.utcnow().isoformat()}."
+                )
+        else:
+            logger.info("No scrapers configured — skipping scrape phase.")
 
         # --- Embedding generation (optional) ---
         if args.embed:
