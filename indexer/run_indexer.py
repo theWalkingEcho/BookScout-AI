@@ -8,11 +8,15 @@ from config import (
     SCRAPE_LIMIT,
     SCRAPE_WORKERS,
     STORE_CONFIGS,
+    GEMINI_API_KEY,
+    EMBEDDING_MODEL,
 )
 from app.scraper import ScraperRunner, StoreScraper
 from cleaner import clean_listing
 from app.scheduler import WeeklyUpdateScheduler
 from infra.neo4j_repository import Neo4jBookstoreRepository
+from infra.embedding_service import EmbeddingService
+from usecases.embed_books_usecase import GenerateAndStoreEmbeddingsUseCase
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,16 @@ def main():
         "--full-refresh",
         action="store_true",
         help="Clear the existing database before scraping",
+    )
+    parser.add_argument(
+        "--embed",
+        action="store_true",
+        help="Generate and store text embeddings for books after scraping",
+    )
+    parser.add_argument(
+        "--reembed",
+        action="store_true",
+        help="Regenerate embeddings for ALL books (use with --embed)",
     )
 
     args = parser.parse_args()
@@ -103,6 +117,25 @@ def main():
             f"Completed update for {total_scraped} listings "
             f"at {datetime.utcnow().isoformat()}."
         )
+
+        # --- Embedding generation (optional) ---
+        if args.embed:
+            if not GEMINI_API_KEY:
+                logger.error(
+                    "--embed flag requires GEMINI_API_KEY in .env. Skipping embedding."
+                )
+            else:
+                logger.info("Starting embedding generation phase…")
+                embedding_service = EmbeddingService(
+                    api_key=GEMINI_API_KEY,
+                    model=EMBEDDING_MODEL,
+                )
+                embed_usecase = GenerateAndStoreEmbeddingsUseCase(
+                    repository=repository,
+                    embedding_service=embedding_service,
+                )
+                embedded_count = embed_usecase.execute(reembed_all=args.reembed)
+                print(f"Embedded {embedded_count} book(s) with text vectors.")
 
     except Exception:
         logger.exception("Indexer failed during execution")

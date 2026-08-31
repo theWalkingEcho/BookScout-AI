@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Iterable, List, Optional
 import logging
+import os
 
 from neo4j import GraphDatabase
 
@@ -16,6 +17,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
         self.database = database
         self._ensure_constraints()
+        self._setup_vector_index()
 
     # ------------------------------------------------------------------
     # Infrastructure helpers
@@ -30,6 +32,25 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         ]
         for query in constraints:
             self._execute(query)
+
+    def _setup_vector_index(self) -> None:
+        """Creates a Neo4j vector index on Book.textEmbedding if it does not exist.
+
+        Requires Neo4j >= 5.11. Silently skips on older versions.
+        """
+        embedding_dimensions = 1536  # Fixed: must match EMBEDDING_DIMENSIONS in config.py
+        query = (
+            "CREATE VECTOR INDEX book_title_embedding IF NOT EXISTS "
+            "FOR (b:Book) ON (b.textEmbedding) "
+            f"OPTIONS {{indexConfig: {{`vector.dimensions`: {embedding_dimensions}, `vector.similarity_function`: 'cosine'}}}}"
+        )
+        try:
+            self._execute(query)
+            logger.info("Vector index 'book_title_embedding' ensured (dimensions=%d).", embedding_dimensions)
+        except Exception as e:
+            logger.warning(
+                "Could not create vector index (Neo4j < 5.11 or index already exists): %s", e
+            )
 
     def clear_database(self) -> None:
         logger.info("Clearing Neo4j database before refresh")
@@ -158,6 +179,14 @@ class Neo4jBookstoreRepository(BookstoreRepository):
                 "store_name": listing.store_name,
                 "book_isbn": listing.book_isbn,
             },
+        )
+
+    def set_book_embedding(self, isbn: str, embedding: List[float]) -> None:
+        """Stores a pre-computed embedding vector on a Book node."""
+        logger.debug("Storing embedding for book isbn=%s (dim=%d)", isbn, len(embedding))
+        self._execute(
+            "MATCH (b:Book {isbn: $isbn}) SET b.textEmbedding = $embedding",
+            {"isbn": isbn, "embedding": embedding},
         )
 
     # ------------------------------------------------------------------

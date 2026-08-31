@@ -20,6 +20,11 @@ SCRAPE_LIMIT = int(os.getenv("SCRAPE_LIMIT")) if os.getenv("SCRAPE_LIMIT") else 
 SCRAPE_BATCH_SIZE = int(os.getenv("SCRAPE_BATCH_SIZE", "50"))
 SCRAPE_WORKERS = int(os.getenv("SCRAPE_WORKERS", "8"))
 
+# Embedding settings
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-004")
+EMBEDDING_DIMENSIONS = 1536  # Fixed: gemini-embedding-004 output dimension
+
 _store_configs_env = os.getenv("STORE_CONFIGS_JSON")
 if _store_configs_env:
     try:
