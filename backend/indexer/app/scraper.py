@@ -331,7 +331,7 @@ class StoreScraper:
 
         return product_urls[:limit]
 
-    def scrape_book_data(self, product_url: str, category_hint: str = "") -> Dict:
+    def scrape_book_data(self, product_url: str, category_hint: str = "") -> Optional[Dict]:
         logger.info("Scraping book page: %s", product_url)
         soup = self._fetch_soup(product_url)
 
@@ -341,6 +341,11 @@ class StoreScraper:
             return next_data_book
 
         title_text = self._find_title(soup)
+        
+        # Skip items marked as deleted
+        if title_text and "DELETED ITEM" in title_text.upper():
+            logger.info("Skipping deleted item: %s", title_text)
+            return None
         price_el = self._find_current_price_element(soup)
         original_price_el = self._find_original_price_element(soup)
         in_stock = self._parse_availability(soup)
@@ -402,6 +407,11 @@ class StoreScraper:
                 return None
 
             title = prod.get("name", "").strip()
+            
+            # Skip items marked as deleted
+            if "DELETED ITEM" in title.upper():
+                logger.info("Skipping deleted item from __NEXT_DATA__: %s", title)
+                return None
             isbn = str(prod.get("isbn13") or prod.get("isbn") or "").replace("-", "").strip()
             if not isbn:
                 isbn = self._generate_book_id(product_url, title)
@@ -1043,7 +1053,10 @@ class ScraperRunner:
             for future in as_completed(futures):
                 url = futures[future]
                 try:
-                    scraped.append(future.result())
+                    result = future.result()
+                    # Skip None results (e.g. deleted items)
+                    if result is not None:
+                        scraped.append(result)
                 except Exception as exc:
                     logger.warning("Failed to scrape %s: %s", url, exc)
         logger.info("Completed scrape batch: %d/%d listing(s)", len(scraped), len(batch))
