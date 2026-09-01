@@ -52,7 +52,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
             uri,
             auth=(user, password),
             connection_timeout=30,  # Increased from default ~15s
-            max_retry_time=30,      # Retry connection attempts for up to 30s
+            connection_acquire_timeout=30,  # Timeout for acquiring a connection from the pool
             max_connection_lifetime=3600,
         )
         self.database = database
