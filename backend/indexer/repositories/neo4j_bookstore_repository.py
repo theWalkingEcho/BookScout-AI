@@ -5,8 +5,8 @@ import os
 
 from neo4j import GraphDatabase
 
-from domain.entities import Author, Book, Category, Listing, Store
-from domain.repositories import BookstoreRepository
+from models.entities import Author, Book, Category, Listing, Store
+from repositories.bookstore_repository import BookstoreRepository
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,8 @@ class Neo4jBookstoreRepository(BookstoreRepository):
                 b.language         = $language,
                 b.publisher        = $publisher,
                 b.description      = $description,
-                b.inStock          = $in_stock
+                b.inStock          = $in_stock,
+                b.textEmbedding    = COALESCE($embedding, b.textEmbedding)
             """,
             {
                 "isbn": book.isbn,
@@ -127,6 +128,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
                 "publisher": book.publisher,
                 "description": book.description,
                 "in_stock": book.in_stock,
+                "embedding": book.text_embedding,
             },
         )
 
@@ -348,6 +350,69 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         for row in result:
             yield Store(name=row["name"], website=row["website"], currency=row["currency"])
 
+    def list_isbns_in_store(self, store_name: str) -> Iterable[str]:
+        """Returns all ISBNs that have a listing in the given store."""
+        logger.debug("Listing ISBNs with listings in store %s", store_name)
+        result = self._fetch_all(
+            """
+            MATCH (b:Book)-[r:HAS_LISTING]->(s:Store {name: $store_name})
+            RETURN DISTINCT b.isbn AS isbn
+            """,
+            {"store_name": store_name},
+        )
+        return [row["isbn"] for row in result if row.get("isbn")]
+
+    def delete_books_not_in_list(self, keep_isbns: List[str]) -> None:
+        """Delete all Book nodes not in the keep_isbns list.
+        
+        This is used during incremental updates to remove books that were not
+        found in the current scrape but exist in the database.
+        Only deletes books that have no other relationships.
+        """
+        if not keep_isbns:
+            logger.warning("delete_books_not_in_list called with empty list — skipping")
+            return
+        
+        logger.info("Removing books not in scraped list (keeping %d ISBNs)", len(keep_isbns))
+        # Delete books not in the keep list, but only if they have no listings
+        # to avoid orphaning listing relationships
+        self._execute(
+            """
+            MATCH (b:Book)
+            WHERE NOT b.isbn IN $keep_isbns
+            AND NOT (b)-[:HAS_LISTING]->()
+            DETACH DELETE b
+            """,
+            {"keep_isbns": keep_isbns},
+        )
+
+    def list_books_without_embedding(self) -> Iterable[Book]:
+        """Returns all Book nodes that don't yet have a textEmbedding vector."""
+        logger.debug("Fetching books without embeddings")
+        result = self._fetch_all(
+            """
+            MATCH (b:Book)
+            WHERE b.textEmbedding IS NULL
+            RETURN b.isbn AS isbn, b.title AS title,
+                   b.normalizedTitle AS normalized_title, b.format AS format,
+                   b.coverImage AS cover_image, b.language AS language,
+                   b.publisher AS publisher, b.description AS description,
+                   b.inStock AS in_stock
+            """
+        )
+        for row in result:
+            yield Book(
+                isbn=row["isbn"],
+                title=row["title"],
+                normalized_title=row["normalized_title"],
+                format=row["format"],
+                cover_image=row["cover_image"],
+                language=row["language"],
+                publisher=row["publisher"],
+                description=row["description"],
+                in_stock=row.get("in_stock", False),
+            )
+
     # ------------------------------------------------------------------
     # Chatbot-friendly query helpers
     # ------------------------------------------------------------------
@@ -367,13 +432,13 @@ class Neo4jBookstoreRepository(BookstoreRepository):
                    a.name         AS author,
                    c.name         AS category,
                    s.name         AS store,
-                     r.price        AS price,
-                     r.originalPrice AS original_price,
-                     r.inStock      AS available,
-                     r.currency     AS currency,
-                     r.url          AS url,
-                     r.lastScraped  AS last_scraped
-                 ORDER BY b.normalizedTitle, r.price
+                   r.price        AS price,
+                   r.originalPrice AS original_price,
+                   r.inStock      AS available,
+                   r.currency     AS currency,
+                   r.url          AS url,
+                   r.lastScraped  AS last_scraped
+            ORDER BY b.normalizedTitle, r.price
             """
         )
         return [dict(row) for row in result]
@@ -385,15 +450,15 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         """
         result = self._fetch_single(
             """
-                        MATCH (b:Book)-[r:HAS_LISTING]->(s:Store)
+            MATCH (b:Book)-[r:HAS_LISTING]->(s:Store)
             WHERE toLower(b.normalizedTitle) CONTAINS toLower($title)
-                            AND r.inStock = true
+            AND r.inStock = true
             RETURN b.title   AS title,
                    s.name    AS store,
-                                     r.price   AS price,
-                                     r.currency AS currency,
-                                     r.url     AS url
-                        ORDER BY r.price ASC
+                   r.price   AS price,
+                   r.currency AS currency,
+                   r.url     AS url
+            ORDER BY r.price ASC
             LIMIT 1
             """,
             {"title": title},
