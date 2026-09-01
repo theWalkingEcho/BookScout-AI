@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """
-    Generates text embeddings using Google Gemini text-embedding-004.
+    Generates text embeddings using Google Gemini embedding models.
     Used by the indexer to create vector representations of Book nodes.
     """
 
-    def __init__(self, api_key: str, model: str = "text-embedding-004"):
+    def __init__(self, api_key: str, model: str = "gemini-embedding-2"):
         self.api_key = api_key
         self.model = model
         self._client = None

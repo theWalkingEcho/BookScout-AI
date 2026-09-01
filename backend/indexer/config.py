@@ -23,8 +23,8 @@ SCRAPE_WORKERS = int(os.getenv("SCRAPE_WORKERS", "8"))
 
 # Embedding settings
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-004")
-EMBEDDING_DIMENSIONS = 768  # Fixed: gemini-embedding-004 output dimension
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-2")
+EMBEDDING_DIMENSIONS = 1536  # Configurable: gemini-embedding-2 supports 128-3072 (default 3072)
 
 import ast
 
