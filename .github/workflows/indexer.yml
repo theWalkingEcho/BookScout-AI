@@ -28,15 +28,15 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pip'
-          cache-dependency-path: 'indexer/requirements.txt'
+          cache-dependency-path: 'backend/indexer/requirements.txt'
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r indexer/requirements.txt
+          pip install -r backend/indexer/requirements.txt
 
       - name: Run Indexer
-        working-directory: indexer
+        working-directory: backend/indexer
         env:
           NEO4J_URI: ${{ secrets.NEO4J_URI }}
           NEO4J_USER: ${{ secrets.NEO4J_USER }}
