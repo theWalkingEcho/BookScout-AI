@@ -1,9 +1,12 @@
 from datetime import datetime
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Callable, Any
 import logging
 import os
+import time
+from functools import wraps
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, DriverError
 
 from models.entities import Author, Book, Category, Listing, Store
 from repositories.bookstore_repository import BookstoreRepository
@@ -11,10 +14,47 @@ from repositories.bookstore_repository import BookstoreRepository
 logger = logging.getLogger(__name__)
 
 
+def retry_on_failure(max_retries: int = 3, backoff_base: float = 2):
+    """Decorator to retry database operations with exponential backoff.
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        backoff_base: Base for exponential backoff (2 = 1s, 2s, 4s, ...)
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except (ServiceUnavailable, DriverError) as e:
+                    if attempt < max_retries - 1:
+                        wait_time = backoff_base ** attempt
+                        logger.warning(
+                            f"Database operation failed (attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {wait_time}s..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(
+                            f"Database operation failed after {max_retries} attempts: {e}"
+                        )
+                        raise
+        return wrapper
+    return decorator
+
+
 class Neo4jBookstoreRepository(BookstoreRepository):
     def __init__(self, uri: str, user: str, password: str, database: str = None):
         logger.info("Connecting to Neo4j at %s, database=%s", uri, database)
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+        # Increased timeouts to handle remote connections and high latency
+        self.driver = GraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            connection_timeout=30,  # Increased from default ~15s
+            max_retry_time=30,      # Retry connection attempts for up to 30s
+            max_connection_lifetime=3600,
+        )
         self.database = database
         self._ensure_constraints()
         self._setup_vector_index()
@@ -60,6 +100,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         logger.info("Closing Neo4j driver")
         self.driver.close()
 
+    @retry_on_failure(max_retries=3, backoff_base=2)
     def _execute(self, query: str, parameters: dict = None) -> None:
         session_kwargs = {}
         if self.database is not None:
@@ -68,6 +109,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         with self.driver.session(**session_kwargs) as session:
             session.run(query, parameters or {}).consume()
 
+    @retry_on_failure(max_retries=3, backoff_base=2)
     def _fetch_all(self, query: str, parameters: dict = None) -> list:
         session_kwargs = {}
         if self.database is not None:
@@ -77,6 +119,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
             result = session.run(query, parameters or {})
             return list(result)
 
+    @retry_on_failure(max_retries=3, backoff_base=2)
     def _fetch_single(self, query: str, parameters: dict = None):
         session_kwargs = {}
         if self.database is not None:
