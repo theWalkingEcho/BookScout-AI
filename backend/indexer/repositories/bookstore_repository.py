@@ -98,3 +98,10 @@ class BookstoreRepository(ABC):
         in the current scrape cycle.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def list_books_without_embedding(self) -> Iterable[Book]:
+        """Returns all Book nodes that don't yet have a textEmbedding vector."""
+        raise NotImplementedError
+
+

@@ -74,23 +74,31 @@ class Neo4jBookstoreRepository(BookstoreRepository):
             self._execute(query)
 
     def _setup_vector_index(self) -> None:
-        """Creates a Neo4j vector index on Book.textEmbedding if it does not exist.
-
-        Requires Neo4j >= 5.11. Silently skips on older versions.
-        """
-        embedding_dimensions = 768  # Fixed: must match EMBEDDING_DIMENSIONS in config.py
-        query = (
+        """Creates Neo4j vector and fulltext indexes on Book nodes."""
+        from config import EMBEDDING_DIMENSIONS
+        embedding_dimensions = EMBEDDING_DIMENSIONS
+        vector_query = (
             "CREATE VECTOR INDEX book_title_embedding IF NOT EXISTS "
             "FOR (b:Book) ON (b.textEmbedding) "
             f"OPTIONS {{indexConfig: {{`vector.dimensions`: {embedding_dimensions}, `vector.similarity_function`: 'cosine'}}}}"
         )
         try:
-            self._execute(query)
+            self._execute(vector_query)
             logger.info("Vector index 'book_title_embedding' ensured (dimensions=%d).", embedding_dimensions)
         except Exception as e:
             logger.warning(
-                "Could not create vector index (Neo4j < 5.11 or index already exists): %s", e
+                "Could not create vector index: %s", e
             )
+
+        fulltext_query = (
+            "CREATE FULLTEXT INDEX book_fulltext_index IF NOT EXISTS "
+            "FOR (b:Book) ON EACH [b.title, b.normalizedTitle, b.description]"
+        )
+        try:
+            self._execute(fulltext_query)
+            logger.info("Fulltext index 'book_fulltext_index' ensured.")
+        except Exception as e:
+            logger.warning("Could not create fulltext index: %s", e)
 
     def clear_database(self) -> None:
         logger.info("Clearing Neo4j database before refresh")
@@ -435,7 +443,7 @@ class Neo4jBookstoreRepository(BookstoreRepository):
         result = self._fetch_all(
             """
             MATCH (b:Book)
-            WHERE b.textEmbedding IS NULL
+            WHERE b.textEmbedding IS NULL OR size(b.textEmbedding) = 0
             RETURN b.isbn AS isbn, b.title AS title,
                    b.normalizedTitle AS normalized_title, b.format AS format,
                    b.coverImage AS cover_image, b.language AS language,

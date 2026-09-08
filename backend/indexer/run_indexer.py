@@ -83,9 +83,16 @@ def main():
         help="Disable generating and storing text embeddings",
     )
     parser.add_argument(
+        "--check-embeddings",
+        "--embed-only",
+        action="store_true",
+        dest="check_embeddings",
+        help="Check database for books missing text embeddings and generate them without scraping",
+    )
+    parser.add_argument(
         "--reembed",
         action="store_true",
-        help="Regenerate embeddings for ALL books (use with --embed)",
+        help="Regenerate embeddings for ALL books (use with --embed or --check-embeddings)",
     )
 
     args = parser.parse_args()
@@ -95,17 +102,56 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    logger.info(
-        "Starting bookstore indexer (scrape_limit=%s, full_refresh=%s)",
-        SCRAPE_LIMIT,
-        args.full_refresh,
-    )
-
     repository = Neo4jBookstoreRepository(
         NEO4J_CONFIG["uri"],
         NEO4J_CONFIG["user"],
         NEO4J_CONFIG["password"],
         database=NEO4J_CONFIG.get("database"),
+    )
+
+    # ---------------------------------------------------------
+    # Mode: Embeddings Check & Missing Embeddings Generation Only
+    # ---------------------------------------------------------
+    if args.check_embeddings:
+        logger.info("Running in EMBEDDINGS CHECK mode (no scraping).")
+        if not GEMINI_API_KEY:
+            logger.error("GEMINI_API_KEY is not set. Cannot check or generate embeddings.")
+            repository.close()
+            return
+
+        try:
+            embedding_service = EmbeddingService(
+                api_key=GEMINI_API_KEY,
+                model=EMBEDDING_MODEL,
+            )
+            embed_service = GenerateAndStoreEmbeddingsService(
+                repository=repository,
+                embedding_service=embedding_service,
+            )
+
+            if args.reembed:
+                logger.info("Forced re-embedding requested for all book nodes.")
+                embedded_count = embed_service.execute(reembed_all=True)
+                print(f"Re-embedded {embedded_count} book(s) with text vectors.")
+            else:
+                missing_books = list(repository.list_books_without_embedding())
+                missing_count = len(missing_books)
+                if missing_count == 0:
+                    logger.info("All book nodes already have embeddings. No missing embeddings found.")
+                    print("All book nodes already have embeddings. No missing embeddings found.")
+                else:
+                    logger.info("Found %d book node(s) missing embeddings. Generating embeddings...", missing_count)
+                    print(f"Found {missing_count} book node(s) missing embeddings. Generating embeddings...")
+                    embedded_count = embed_service.execute(reembed_all=False)
+                    print(f"Successfully generated and stored embeddings for {embedded_count}/{missing_count} book(s).")
+        finally:
+            repository.close()
+        return
+
+    logger.info(
+        "Starting bookstore indexer (scrape_limit=%s, full_refresh=%s)",
+        SCRAPE_LIMIT,
+        args.full_refresh,
     )
 
     if STORE_CONFIGS is None:
@@ -115,8 +161,9 @@ def main():
         else:
             logger.error(
                 "STORE_CONFIGS_JSON is not set. "
-                "Set it in .env or pass --embed to run embedding only."
+                "Set it in .env or pass --embed / --check-embeddings to run embedding only."
             )
+            repository.close()
             return
     else:
         scrapers = [

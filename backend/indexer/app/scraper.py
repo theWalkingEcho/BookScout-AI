@@ -4,15 +4,14 @@ StoreScraper — deep BFS and sitemap web scraper for Sri Lankan bookstores.
 Key design decisions
 --------------------
 * **Sitemap / Next.js and BFS discovery** — stores with XML sitemaps
-  (such as Sarasavi Bookshop) discover product links directly via sitemaps
-  to avoid slow or timing-out SSR category pages. Other stores use BFS
-  crawling seeded from category navigation.
+  discover product links directly via sitemaps to avoid slow or
+  timing-out SSR category pages. Other stores use BFS crawling seeded
+  from category navigation.
 * **Link classification** — URLs are classified as ``product``,
   ``category``, ``pagination``, or ``ignore`` to prevent crawling
   unrelated pages, shopping carts, or Cloudflare protection endpoints.
 * **Rich metadata extraction** — supports structured ``__NEXT_DATA__``
-  JSON-LD, meta tags, specification tables (e.g. Vijitha Yapa, Makeen),
-  and WooCommerce layouts.
+  JSON-LD, meta tags, specification tables, and WooCommerce layouts.
 * **Plausibility guards** — author names, ISBNs, and prices are validated
   and sanitized.
 """
@@ -136,12 +135,12 @@ class StoreScraper:
         limit = max_links if max_links is not None else self.MAX_PRODUCT_LINKS
         logger.info("Scraping listing links from %s (target limit=%d)", self.base_url, limit)
 
-        # 1. Specialized sitemap discovery for stores like Sarasavi
+        # 1. Specialized sitemap discovery for stores that use Next.js sitemaps
         if "sarasavi.lk" in self.base_url.lower():
             sitemap_links = self._scrape_sarasavi_links(max_links=limit)
             if sitemap_links:
                 logger.info(
-                    "Discovered %d product links from Sarasavi sitemaps",
+                    "Discovered %d product links from sitemaps",
                     len(sitemap_links),
                 )
                 return sitemap_links[:limit]
@@ -271,7 +270,7 @@ class StoreScraper:
         return list(product_url_map.items())[:limit]
 
     def _scrape_sarasavi_links(self, max_links: Optional[int] = None) -> List[Tuple[str, str]]:
-        """Extract product links directly from Sarasavi sitemaps and homepage Next.js data."""
+        """Extract product links directly from sitemaps and homepage Next.js data."""
         limit = max_links if max_links is not None else self.MAX_PRODUCT_LINKS
         product_urls: List[Tuple[str, str]] = []
         seen = set()
@@ -289,18 +288,18 @@ class StoreScraper:
                         for item in items:
                             slug = item.get("slug")
                             if slug:
-                                full_url = f"https://www.sarasavi.lk/product/{slug}"
+                                full_url = f"{self.base_url.rstrip('/')}/product/{slug}"
                                 if full_url not in seen:
                                     seen.add(full_url)
-                                    product_urls.append((full_url, "Sarasavi Bookshop"))
+                                    product_urls.append((full_url, self.store_name))
                                     if len(product_urls) >= limit:
                                         return product_urls
         except Exception as exc:
-            logger.debug("Failed to extract Sarasavi homepage Next.js data: %s", exc)
+            logger.debug("Failed to extract homepage Next.js data: %s", exc)
 
         # 2. Check XML sitemaps
         try:
-            sitemap_url = "https://www.sarasavi.lk/sitemap.xml"
+            sitemap_url = f"{self.base_url.rstrip('/')}/sitemap.xml"
             resp = self._get_with_retry(sitemap_url)
             root = ET.fromstring(resp.content)
             locs = [
@@ -321,13 +320,13 @@ class StoreScraper:
                         url = loc_el.text.strip() if loc_el.text else ""
                         if url and url not in seen and "/product/" in url:
                             seen.add(url)
-                            product_urls.append((url, "Sarasavi Bookshop"))
+                            product_urls.append((url, self.store_name))
                             if len(product_urls) >= limit:
                                 break
                 except Exception as exc:
                     logger.warning("Failed to fetch/parse sitemap %s: %s", sm, exc)
         except Exception as exc:
-            logger.warning("Failed to fetch Sarasavi sitemap index: %s", exc)
+            logger.warning("Failed to fetch sitemap index: %s", exc)
 
         return product_urls[:limit]
 
@@ -335,7 +334,7 @@ class StoreScraper:
         logger.info("Scraping book page: %s", product_url)
         soup = self._fetch_soup(product_url)
 
-        # Check for Next.js structured data first (e.g. Sarasavi)
+        # Check for Next.js structured data first
         next_data_book = self._parse_next_data(soup, product_url)
         if next_data_book:
             return next_data_book
@@ -440,7 +439,7 @@ class StoreScraper:
                 cover_image = (
                     image_path
                     if image_path.startswith("http")
-                    else f"https://cms.sarasavi.lk/storage/{image_path.lstrip('/')}"
+                    else f"{self.base_url.rstrip('/')}/storage/{image_path.lstrip('/')}"
                 )
             else:
                 cover_image = ""
@@ -714,7 +713,7 @@ class StoreScraper:
             return 0.0
 
     def _read_isbn(self, soup: BeautifulSoup) -> str:
-        # 1. Spec list items (e.g. Vijitha Yapa)
+        # 1. Spec list items
         for li in soup.select("ul.product-spec-list li, .product_meta li, .product_meta span"):
             text = li.get_text(" ", strip=True)
             if "isbn" in text.lower():
@@ -755,7 +754,7 @@ class StoreScraper:
     # ------------------------------------------------------------------
 
     def _read_author(self, soup: BeautifulSoup) -> str:
-        # 1. Spec list items (e.g. Vijitha Yapa <li><span>Author :</span>Name</li>)
+        # 1. Spec list items (e.g. <li><span>Author :</span>Name</li>)
         for li in soup.select("ul.product-spec-list li, .product-attributes li"):
             text = li.get_text(" ", strip=True)
             if "author" in text.lower():
@@ -955,7 +954,7 @@ class StoreScraper:
         return None
 
     def _read_language(self, soup: BeautifulSoup) -> Optional[str]:
-        # 1. Spec list items (e.g. Vijitha Yapa)
+        # 1. Spec list items
         for li in soup.select("ul.product-spec-list li, .product-attributes li"):
             text = li.get_text(" ", strip=True)
             if "language" in text.lower():
