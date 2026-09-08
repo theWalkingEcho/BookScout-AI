@@ -9,3 +9,6 @@ __pycache__/
 
 #ignore vscode
 .vscode
+
+# ignore ephemeral chat session files
+frontend/chat_sessions/
