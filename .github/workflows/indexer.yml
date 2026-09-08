@@ -2,15 +2,26 @@ name: Bookstore Indexer
 
 on:
   schedule:
+    # Daily embedding integrity check at 02:00 UTC (checks and generates any missed embeddings)
+    - cron: '0 2 * * *'
     # Incremental update every Sunday at 00:00 UTC
     - cron: '0 0 * * 0'
     # Full database refresh on the 1st of every month at 00:00 UTC
     - cron: '0 0 1 * *'
   workflow_dispatch:
     inputs:
-      full_refresh:
-        description: 'Clear database and perform full refresh (True) or incremental update (False)'
+      action:
+        description: 'Action to perform (check_embeddings, incremental, or full_refresh)'
         required: true
+        type: choice
+        options:
+          - 'check_embeddings'
+          - 'incremental'
+          - 'full_refresh'
+        default: 'check_embeddings'
+      full_refresh:
+        description: '[Legacy] Force clear database and perform full refresh'
+        required: false
         type: boolean
         default: false
 
@@ -46,17 +57,26 @@ jobs:
           STORE_CONFIGS_JSON: ${{ secrets.STORE_CONFIGS_JSON }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
+            if [ "${{ github.event.inputs.full_refresh }}" = "true" ] || [ "${{ github.event.inputs.action }}" = "full_refresh" ]; then
               echo "==> Manual Trigger: Running FULL REFRESH (clearing database)..."
               python run_indexer.py --full-refresh
-            else
+            elif [ "${{ github.event.inputs.action }}" = "incremental" ]; then
               echo "==> Manual Trigger: Running INCREMENTAL update..."
               python run_indexer.py
+            else
+              echo "==> Manual Trigger: Checking and generating missing embeddings..."
+              python run_indexer.py --check-embeddings
             fi
           elif [ "${{ github.event.schedule }}" = "0 0 1 * *" ]; then
             echo "==> Monthly Cron: Running FULL REFRESH (clearing database)..."
             python run_indexer.py --full-refresh
-          else
+          elif [ "${{ github.event.schedule }}" = "0 0 * * 0" ]; then
             echo "==> Weekly Cron: Running INCREMENTAL update..."
             python run_indexer.py
+          elif [ "${{ github.event.schedule }}" = "0 2 * * *" ]; then
+            echo "==> Daily Cron: Checking and generating missing embeddings..."
+            python run_indexer.py --check-embeddings
+          else
+            echo "==> Daily/Scheduled Trigger: Checking and generating missing embeddings..."
+            python run_indexer.py --check-embeddings
           fi
