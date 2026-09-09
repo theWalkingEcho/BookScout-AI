@@ -1,5 +1,5 @@
 """
-Streamlit Chatbot UI for Book Inventory & Price Comparison Assistant.
+Streamlit Chatbot UI for BookScout AI — AI-Powered Book Discovery.
 Client-facing demo — no technical/sensitive information exposed.
 """
 
@@ -33,7 +33,7 @@ _SESSIONS_DIR = Path(__file__).resolve().parent / "chat_sessions"
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="BookFinder AI — Sri Lankan Bookstore Assistant",
+    page_title="BookScout AI — AI-Powered Book Discovery",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -542,8 +542,8 @@ with st.sidebar:
     <div class="sidebar-logo">
         <div class="sidebar-logo-icon">📚</div>
         <div>
-            <div class="sidebar-logo-text">BookFinder AI</div>
-            <div class="sidebar-logo-sub">Sri Lankan Bookstores</div>
+            <div class="sidebar-logo-text">BookScout AI</div>
+            <div class="sidebar-logo-sub">AI-Powered Book Discovery</div>
         </div>
     </div>
     """, unsafe_allow_html=True)

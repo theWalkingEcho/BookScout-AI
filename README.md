@@ -1,4 +1,4 @@
-# 📚 Book Inventory Finder & Price Comparison AI
+# 📚 BookScout AI — AI-Powered Book Discovery
 
 > **An intelligent, multi-store bookstore inventory aggregator, knowledge graph, and AI shopping assistant powered by Neo4j, Google Gemini, FastAPI, and Streamlit.**
 
@@ -27,7 +27,7 @@
 
 ## 🌟 Overview
 
-**Book Inventory Finder** is an end-to-end solution designed to scrape, structure, and query book catalogs across multiple online bookstores. It unifies fragmented bookstore inventories into a centralized **Neo4j Knowledge Graph**, enriches catalog items with **Google Gemini Vector Embeddings**, and provides a conversational AI assistant that helps readers:
+**BookScout AI** is an end-to-end solution designed to scrape, structure, and query book catalogs across multiple online bookstores. It unifies fragmented bookstore inventories into a centralized **Neo4j Knowledge Graph**, enriches catalog items with **Google Gemini Vector Embeddings**, and provides a conversational AI assistant that helps readers:
 
 - Compare live book prices and stock availability across multiple retailers.
 - Discover books using natural-language semantic concepts (e.g., *"gripping historical fiction set during wartime"*).
@@ -567,4 +567,4 @@ Here are sample queries you can try in the Streamlit UI or via `POST /chat`:
 
 ## 📄 License
 
-This project is open-source and available under the **MIT License**.
+This is a **personal portfolio project** — all rights reserved by the author.

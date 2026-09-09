@@ -1,5 +1,5 @@
 """
-FastAPI entry point for the Book Inventory Chat & Hybrid Search API.
+FastAPI entry point for the BookScout AI — Chat & Hybrid Search API.
 
 Run with:
     cd backend/chat
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="Book Inventory Finder – Chat & Search API",
+    title="BookScout AI — AI-Powered Book Discovery",
     description="Natural-language and hybrid semantic search over the Sri Lankan bookstore inventory knowledge graph.",
     version="1.1.0",
 )
