@@ -137,7 +137,7 @@ class StoreScraper:
 
         # 1. Specialized sitemap discovery for stores that use Next.js sitemaps
         if "sarasavi.lk" in self.base_url.lower():
-            sitemap_links = self._scrape_sarasavi_links(max_links=limit)
+            sitemap_links = self._scrape_sitemap_links(max_links=limit)
             if sitemap_links:
                 logger.info(
                     "Discovered %d product links from sitemaps",
@@ -269,7 +269,7 @@ class StoreScraper:
         )
         return list(product_url_map.items())[:limit]
 
-    def _scrape_sarasavi_links(self, max_links: Optional[int] = None) -> List[Tuple[str, str]]:
+    def _scrape_sitemap_links(self, max_links: Optional[int] = None) -> List[Tuple[str, str]]:
         """Extract product links directly from sitemaps and homepage Next.js data."""
         limit = max_links if max_links is not None else self.MAX_PRODUCT_LINKS
         product_urls: List[Tuple[str, str]] = []

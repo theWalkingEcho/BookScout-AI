@@ -35,6 +35,9 @@ class GeminiConfig:
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "gemini-embedding-2")
     embedding_dimensions: int = int(os.getenv("EMBEDDING_DIMENSIONS", "3072"))
     semantic_search_top_k: int = int(os.getenv("SEMANTIC_SEARCH_TOP_K", "15"))
+    vector_search_top_k: int = int(os.getenv("VECTOR_SEARCH_TOP_K", "10"))
+    fulltext_search_top_k: int = int(os.getenv("FULLTEXT_SEARCH_TOP_K", "10"))
+    hybrid_search_top_k: int = int(os.getenv("HYBRID_SEARCH_TOP_K", "15"))
 
 
 @dataclass(frozen=True)

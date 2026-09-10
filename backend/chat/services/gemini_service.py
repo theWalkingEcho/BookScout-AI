@@ -1,5 +1,6 @@
 import re
 import json
+import time
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
@@ -80,6 +81,28 @@ class ILLMServiceClient(ABC):
         query_results: List[Dict[str, Any]],
     ) -> List[str]:
         """Generates relevant follow-up questions for the user to explore further."""
+        pass
+
+    @abstractmethod
+    def generate_search_cypher(
+        self,
+        search_type: str,
+        schema: Dict[str, Any],
+        top_k: int,
+        **kwargs,
+    ) -> str:
+        """
+        Generates an index-based search Cypher query (vector or fulltext) from the live schema.
+
+        Args:
+            search_type: One of 'vector' or 'fulltext'.
+            schema: The live Neo4j schema dict (from get_live_schema).
+            top_k: Number of results to return.
+            **kwargs: Extra context (e.g., query_text for fulltext, index_name for vector).
+
+        Returns:
+            A read-only Cypher query string, or a fallback marker string on failure.
+        """
         pass
 
 
@@ -479,6 +502,89 @@ Please synthesize an engaging, well-formatted markdown response with comparison 
             "Compare prices for Atomic Habits",
             "Show available thriller books",
         ]
+
+    def generate_search_cypher(
+        self,
+        search_type: str,
+        schema: Dict[str, Any],
+        top_k: int,
+        **kwargs,
+    ) -> str:
+        """
+        Generates a Neo4j index-based search Cypher query (vector or fulltext)
+        by passing the live schema to the LLM.
+
+        Falls back to a safe default template if LLM is unavailable or returns invalid output.
+        """
+        node_labels = schema.get("node_labels", {})
+        relationships = schema.get("relationships", {})
+        store_names = schema.get("store_names", [])
+
+        # Build a compact schema description for the LLM
+        node_lines = [f"  - (:{label}): properties {props}" for label, props in node_labels.items()]
+        rel_lines = [f"  - {pattern}" for pattern in relationships.values()]
+        schema_text = (
+            "Node Labels:\n" + "\n".join(node_lines) + "\n"
+            + "Relationships:\n" + "\n".join(rel_lines) + "\n"
+            + f"Indexed Stores: {', '.join(store_names)}\n"
+        )
+
+        if search_type == "vector":
+            index_name = kwargs.get("index_name", "book_title_embedding")
+            system_instruction = f"""\
+You are a Neo4j Cypher expert. Generate a single read-only Cypher query that performs a vector similarity search.
+
+RULES:
+- Use CALL db.index.vector.queryNodes('{index_name}', $top_k, $embedding) YIELD node AS b, score
+- After the CALL, use OPTIONAL MATCH to join Author, Category, and Store/Listing nodes.
+- Return: b.title AS title, b.isbn AS isbn, b.description AS description, b.coverImage AS coverImage,
+  collect(DISTINCT a.name) AS authors, collect(DISTINCT c.name) AS categories,
+  collect(DISTINCT {{store: s.name, price: r.price, originalPrice: r.originalPrice, currency: r.currency, inStock: r.inStock, url: r.url}}) AS listings,
+  score AS similarity_score
+- ORDER BY score DESC
+- Only output the raw Cypher query inside a ```cypher block, nothing else.
+- Do NOT use CREATE, MERGE, DELETE, SET, ALTER, or LIMIT (top_k is handled by the vector index call).
+
+GRAPH SCHEMA:
+{schema_text}
+"""
+            prompt = (
+                f"Generate the vector search Cypher query using the '{index_name}' index "
+                f"with parameters $embedding (the query vector) and $top_k (integer={top_k})."
+            )
+        elif search_type == "fulltext":
+            index_name = kwargs.get("index_name", "book_fulltext_index")
+            system_instruction = f"""\
+You are a Neo4j Cypher expert. Generate a single read-only Cypher query that performs a full-text keyword search.
+
+RULES:
+- Use CALL db.index.fulltext.queryNodes('{index_name}', $query_text) YIELD node AS b, score
+- After the CALL, use OPTIONAL MATCH to join Author, Category, and Store/Listing nodes.
+- Return: b.title AS title, b.isbn AS isbn, b.description AS description, b.coverImage AS coverImage,
+  collect(DISTINCT a.name) AS authors, collect(DISTINCT c.name) AS categories,
+  collect(DISTINCT {{store: s.name, price: r.price, originalPrice: r.originalPrice, currency: r.currency, inStock: r.inStock, url: r.url}}) AS listings,
+  score AS fulltext_score
+- ORDER BY score DESC
+- Add LIMIT $top_k at the very end.
+- Only output the raw Cypher query inside a ```cypher block, nothing else.
+- Do NOT use CREATE, MERGE, DELETE, SET, or ALTER.
+
+GRAPH SCHEMA:
+{schema_text}
+"""
+            prompt = (
+                f"Generate the fulltext search Cypher query using the '{index_name}' index "
+                f"with parameters $query_text (the Lucene search string) and $top_k (integer={top_k})."
+            )
+        else:
+            raise ValueError(f"Unknown search_type '{search_type}'. Must be 'vector' or 'fulltext'.")
+
+        try:
+            raw = self._call_gemini(prompt, system_instruction=system_instruction, max_retries=2)
+            return self._clean_cypher_output(raw)
+        except Exception as e:
+            logger.warning("generate_search_cypher(%s) LLM call failed: %s", search_type, e)
+            return ""  # Caller will use fallback
 
     def generate_title(self, messages: List[Dict[str, str]]) -> str:
         """

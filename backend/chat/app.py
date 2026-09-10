@@ -33,6 +33,7 @@ from pydantic import BaseModel
 try:
     from config import config
     from repositories.neo4j_reader import Neo4jGraphReader
+    from repositories.neo4j_search import Neo4jSearchService
     from services.gemini_service import GeminiLLMService
     from services.embedding_service import QueryEmbeddingService
     from services.chat_service import ChatQueryService
@@ -40,6 +41,7 @@ try:
 except ImportError:
     from backend.chat.config import config
     from backend.chat.repositories.neo4j_reader import Neo4jGraphReader
+    from backend.chat.repositories.neo4j_search import Neo4jSearchService
     from backend.chat.services.gemini_service import GeminiLLMService
     from backend.chat.services.embedding_service import QueryEmbeddingService
     from backend.chat.services.chat_service import ChatQueryService
@@ -73,11 +75,12 @@ app.add_middleware(
 _service: Optional[ChatQueryService] = None
 _db_reader: Optional[Neo4jGraphReader] = None
 _embedding_service: Optional[QueryEmbeddingService] = None
+_search_service: Optional[Neo4jSearchService] = None
 
 
 @app.on_event("startup")
 def startup():
-    global _service, _db_reader, _embedding_service
+    global _service, _db_reader, _embedding_service, _search_service
     logger.info("Initializing services with Neo4j URI: %s", config.neo4j.uri)
     
     _db_reader = Neo4jGraphReader(
@@ -98,17 +101,27 @@ def startup():
         api_key=config.gemini.api_key,
         model=config.gemini.embedding_model,
     )
+
+    _search_service = Neo4jSearchService(
+        db_reader=_db_reader,
+        llm_service=llm_service,
+    )
     
     _service = ChatQueryService(
         db_reader=_db_reader,
         llm_service=llm_service,
         embedding_service=_embedding_service,
-        semantic_top_k=config.gemini.semantic_search_top_k,
+        semantic_top_k=config.gemini.hybrid_search_top_k,
+        search_service=_search_service,
     )
     
     logger.info(
-        "Chat API initialised successfully (Neo4j: %s, LLM: %s, Embedding: %s)",
+        "Chat API initialised successfully (Neo4j: %s, LLM: %s, Embedding: %s, "
+        "vector_top_k=%d, fulltext_top_k=%d, hybrid_top_k=%d)",
         config.neo4j.uri, config.gemini.model_name, config.gemini.embedding_model,
+        config.gemini.vector_search_top_k,
+        config.gemini.fulltext_search_top_k,
+        config.gemini.hybrid_search_top_k,
     )
 
 
@@ -276,9 +289,11 @@ def direct_search(request: DirectSearchRequest):
     """
     Perform direct hybrid search (vector similarity + keyword fulltext search)
     without LLM response synthesis, returning raw structured candidates.
+    top_k is controlled by HYBRID_SEARCH_TOP_K in the .env file;
+    the request body top_k overrides the env default if provided.
     """
-    if _db_reader is None:
-        raise HTTPException(status_code=503, detail="Database service not ready.")
+    if _search_service is None:
+        raise HTTPException(status_code=503, detail="Search service not ready.")
 
     import time
     start = time.perf_counter()
@@ -286,7 +301,8 @@ def direct_search(request: DirectSearchRequest):
     if _embedding_service and _embedding_service.is_available:
         query_vector = _embedding_service.embed_query(request.query)
 
-    records = _db_reader.hybrid_search(
+    # request.top_k defaults to config value (set in DirectSearchRequest)
+    records = _search_service.hybrid_search(
         query_text=request.query,
         query_embedding=query_vector,
         top_k=request.top_k,

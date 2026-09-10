@@ -11,6 +11,7 @@ Schema:
       { "role": "assistant", "content": "<previous assistant turn>" }
     ]
   }
+  
 
   - "query"   : required - the current user question
   - "history" : optional - list of prior conversation turns (oldest first)

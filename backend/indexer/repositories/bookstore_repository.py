@@ -69,14 +69,6 @@ class BookstoreRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list_books_with_listings(self) -> List[dict]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def find_cheapest_listing_for_book(self, title: str) -> Optional[dict]:
-        raise NotImplementedError
-
-    @abstractmethod
     def clear_database(self) -> None:
         raise NotImplementedError
 

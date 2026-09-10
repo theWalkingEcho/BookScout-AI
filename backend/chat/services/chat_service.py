@@ -21,13 +21,16 @@ except ImportError:
 
 try:
     from repositories.neo4j_reader import IGraphDatabaseReader
+    from repositories.neo4j_search import Neo4jSearchService
     from services.gemini_service import ILLMServiceClient
 except ImportError:
     try:
         from chat.repositories.neo4j_reader import IGraphDatabaseReader
+        from chat.repositories.neo4j_search import Neo4jSearchService
         from chat.services.gemini_service import ILLMServiceClient
     except ImportError:
         from backend.chat.repositories.neo4j_reader import IGraphDatabaseReader
+        from backend.chat.repositories.neo4j_search import Neo4jSearchService
         from backend.chat.services.gemini_service import ILLMServiceClient
 
 logger = logging.getLogger(__name__)
@@ -61,11 +64,16 @@ class ChatQueryService:
         llm_service: ILLMServiceClient,
         embedding_service=None,
         semantic_top_k: int = 15,
+        search_service: Optional["Neo4jSearchService"] = None,
     ):
         self.db_reader = db_reader
         self.llm_service = llm_service
         self.embedding_service = embedding_service
         self.semantic_top_k = semantic_top_k
+        # Use the injected search service, or fall back to creating one inline
+        self.search_service: Neo4jSearchService = search_service or Neo4jSearchService(
+            db_reader=db_reader, llm_service=llm_service
+        )
 
         self._cached_schema: Optional[str] = None
         self._schema_cached_at: float = 0.0
@@ -120,15 +128,15 @@ class ChatQueryService:
 
     def _hybrid_search(self, user_query: str) -> List[Dict[str, Any]]:
         """
-        Embeds user_query (if embedding service available) and calls Neo4j hybrid search
-        (combining keyword Lucene fulltext search + cosine vector search).
+        Embeds user_query (if embedding service available) and calls Neo4jSearchService.hybrid_search
+        (combining keyword Lucene fulltext search + cosine vector search with LLM-generated Cypher).
         """
         query_vector = None
         if self.embedding_service and self.embedding_service.is_available:
             query_vector = self.embedding_service.embed_query(user_query)
 
         try:
-            records = self.db_reader.hybrid_search(
+            records = self.search_service.hybrid_search(
                 query_text=user_query,
                 query_embedding=query_vector,
                 top_k=self.semantic_top_k,

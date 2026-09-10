@@ -195,57 +195,6 @@ Create a `.env` file in the root directory of the project. Both `backend/indexer
 
 Copy `.env.example` to `.env` and fill in your credentials:
 
-```bash
-# ---------------------------------------------------------------------------
-# Neo4j Database Connection
-# ---------------------------------------------------------------------------
-NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_secure_password_here
-NEO4J_DATABASE=neo4j
-
-# ---------------------------------------------------------------------------
-# Google Gemini AI Settings
-# ---------------------------------------------------------------------------
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3.6-flash
-GEMINI_TEMPERATURE=0.2
-EMBEDDING_MODEL=gemini-embedding-2
-EMBEDDING_DIMENSIONS=3072
-SEMANTIC_SEARCH_TOP_K=15
-
-# ---------------------------------------------------------------------------
-# Web Scraper Settings
-# ---------------------------------------------------------------------------
-SCRAPE_LIMIT=500
-SCRAPE_BATCH_SIZE=50
-SCRAPE_WORKERS=8
-
-# ---------------------------------------------------------------------------
-# Bookstore Targets (JSON Array Format)
-# ---------------------------------------------------------------------------
-STORE_CONFIGS_JSON='[
-    {
-        "name": "Grantha",
-        "base_url": "https://grantha.lk",
-        "currency": "LKR"
-    },
-    {
-        "name": "Sarasavi",
-        "base_url": "https://www.sarasavi.lk",
-        "currency": "LKR"
-    }
-]'
-
-# ---------------------------------------------------------------------------
-# Application & Frontend Settings
-# ---------------------------------------------------------------------------
-API_URL=http://localhost:8000
-APP_HOST=0.0.0.0
-APP_PORT=8000
-APP_DEBUG=false
-```
-
 ---
 
 ## 🛠️ Prerequisites
@@ -412,7 +361,7 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
 #### Response Body
 ```json
 {
-  "answer": "I found **Atomic Habits** by James Clear available across 2 bookstores:\n\n| Bookstore | Price | Stock Status | Link |\n| :--- | :--- | :--- | :--- |\n| **Grantha** | LKR 2,450.00 | ✅ In Stock | [View on Grantha](https://grantha.lk/product/atomic-habits) |\n| **Sarasavi** | LKR 2,800.00 | ✅ In Stock | [View on Sarasavi](https://www.sarasavi.lk/product/atomic-habits) |\n\n💡 *Grantha offers the lowest price, saving you LKR 350.00.*",
+  "answer": "I found **Atomic Habits** by James Clear available across 2 bookstores:\n\n| Bookstore | Price | Stock Status | Link |\n| :--- | :--- | :--- | :--- |\n| **Store 1** | LKR 2,450.00 | ✅ In Stock | [View on Store 1](https://store1.com/product/atomic-habits) |\n| **Store 2** | LKR 2,800.00 | ✅ In Stock | [View on Store 2](https://store2.com/product/atomic-habits) |\n\n💡 *Store 1 offers the lowest price, saving you LKR 350.00.*",
   "cypher_query": "MATCH (b:Book {normalizedTitle: 'atomic habits'})-[r:HAS_LISTING]->(s:Store) RETURN b, r, s",
   "records_count": 2,
   "suggestions": [
@@ -422,8 +371,8 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
   "execution_time_ms": 342.15,
   "error": null,
   "sources": [
-    "Atomic Habits - Grantha (LKR 2450.00)",
-    "Atomic Habits - Sarasavi (LKR 2800.00)"
+    "Atomic Habits - Store 1 (LKR 2450.00)",
+    "Atomic Habits - Store 2 (LKR 2800.00)"
   ]
 }
 ```
