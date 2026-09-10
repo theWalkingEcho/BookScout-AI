@@ -11,4 +11,7 @@ __pycache__/
 .vscode
 
 # ignore ephemeral chat session files
-frontend/chat_sessions/
+frontend/chat_sessions/
+
+# ignore sample query
+/sample_queries.txt
