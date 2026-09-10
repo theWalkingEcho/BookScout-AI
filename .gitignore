@@ -12,7 +12,3 @@ __pycache__/
 
 # ignore ephemeral chat session files
 frontend/chat_sessions/
-
-# ignore sample query
-/sample_queries.txt
-sample_queries.txt
