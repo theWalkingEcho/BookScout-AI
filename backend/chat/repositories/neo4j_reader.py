@@ -5,12 +5,15 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
 try:
-    from models.entities import ChatMessage, CypherQueryResult
+    from models.chat_message import ChatMessage
+    from models.cypher_query_result import CypherQueryResult
 except ImportError:
     try:
-        from chat.models.entities import ChatMessage, CypherQueryResult
+        from chat.models.chat_message import ChatMessage
+        from chat.models.cypher_query_result import CypherQueryResult
     except ImportError:
-        from backend.chat.models.entities import ChatMessage, CypherQueryResult
+        from backend.chat.models.chat_message import ChatMessage
+        from backend.chat.models.cypher_query_result import CypherQueryResult
 
 from neo4j import GraphDatabase, Driver
 from neo4j.exceptions import ServiceUnavailable, DriverError

@@ -6,12 +6,18 @@ import concurrent.futures
 from typing import List, Dict, Any, Optional
 
 try:
-    from models.entities import ChatMessage, ChatResponse, CypherQueryResult
+    from models.chat_message import ChatMessage
+    from models.chat_response import ChatResponse
+    from models.cypher_query_result import CypherQueryResult
 except ImportError:
     try:
-        from chat.models.entities import ChatMessage, ChatResponse, CypherQueryResult
+        from chat.models.chat_message import ChatMessage
+        from chat.models.chat_response import ChatResponse
+        from chat.models.cypher_query_result import CypherQueryResult
     except ImportError:
-        from backend.chat.models.entities import ChatMessage, ChatResponse, CypherQueryResult
+        from backend.chat.models.chat_message import ChatMessage
+        from backend.chat.models.chat_response import ChatResponse
+        from backend.chat.models.cypher_query_result import CypherQueryResult
 
 try:
     from repositories.neo4j_reader import IGraphDatabaseReader

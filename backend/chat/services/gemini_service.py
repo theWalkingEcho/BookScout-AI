@@ -5,12 +5,12 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
 try:
-    from models.entities import ChatMessage
+    from models.chat_message import ChatMessage
 except ImportError:
     try:
-        from chat.models.entities import ChatMessage
+        from chat.models.chat_message import ChatMessage
     except ImportError:
-        from backend.chat.models.entities import ChatMessage
+        from backend.chat.models.chat_message import ChatMessage
 
 try:
     from services.embedding_service import QueryEmbeddingService
