@@ -135,16 +135,6 @@ class StoreScraper:
         limit = max_links if max_links is not None else self.MAX_PRODUCT_LINKS
         logger.info("Scraping listing links from %s (target limit=%d)", self.base_url, limit)
 
-        # 1. Specialized sitemap discovery for stores that use Next.js sitemaps
-        if "sarasavi.lk" in self.base_url.lower():
-            sitemap_links = self._scrape_sitemap_links(max_links=limit)
-            if sitemap_links:
-                logger.info(
-                    "Discovered %d product links from sitemaps",
-                    len(sitemap_links),
-                )
-                return sitemap_links[:limit]
-
         visited: set = set()
         product_url_map: Dict[str, str] = {}
         base_netloc = urlparse(self.base_url).netloc
@@ -157,6 +147,17 @@ class StoreScraper:
         except Exception as exc:
             logger.error("Failed to fetch base URL %s: %s", self.base_url, exc)
             return []
+
+        # 1. Specialized discovery for stores that use Next.js
+        if base_soup.find("script", id="__NEXT_DATA__"):
+            logger.info("Identified Next.js site: %s. Attempting sitemap and Next.js data extraction.", self.base_url)
+            sitemap_links = self._scrape_sitemap_links(base_soup=base_soup, max_links=limit)
+            if sitemap_links:
+                logger.info(
+                    "Discovered %d product links from sitemaps/Next.js data",
+                    len(sitemap_links),
+                )
+                return sitemap_links[:limit]
 
         visited.add(self.base_url)
 
@@ -269,7 +270,7 @@ class StoreScraper:
         )
         return list(product_url_map.items())[:limit]
 
-    def _scrape_sitemap_links(self, max_links: Optional[int] = None) -> List[Tuple[str, str]]:
+    def _scrape_sitemap_links(self, base_soup: BeautifulSoup, max_links: Optional[int] = None) -> List[Tuple[str, str]]:
         """Extract product links directly from sitemaps and homepage Next.js data."""
         limit = max_links if max_links is not None else self.MAX_PRODUCT_LINKS
         product_urls: List[Tuple[str, str]] = []
@@ -277,8 +278,7 @@ class StoreScraper:
 
         # 1. Check homepage __NEXT_DATA__ for featured/new/bestseller books
         try:
-            home_soup = self._fetch_soup(self.base_url)
-            nd = home_soup.find("script", id="__NEXT_DATA__")
+            nd = base_soup.find("script", id="__NEXT_DATA__")
             if nd and nd.string:
                 data = json.loads(nd.string)
                 page_props = data.get("props", {}).get("pageProps", {})
