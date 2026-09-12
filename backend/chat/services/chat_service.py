@@ -299,7 +299,7 @@ class ChatQueryService:
                 logger.error("Cypher execution failed: %s", e)
 
         # Merge & consolidate results across stores
-        merged_records = self._consolidate_and_merge_results(hybrid_records, cypher_records)
+        merged_records = self._consolidate_and_merge_results(hybrid_records, cypher_records)[:self.semantic_top_k]
         sources = [r.get("_source", "hybrid") for r in merged_records]
         return False, cypher_query, merged_records, sources
 

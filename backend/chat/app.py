@@ -37,7 +37,7 @@ try:
     from services.gemini_service import GeminiLLMService
     from services.embedding_service import QueryEmbeddingService
     from services.chat_service import ChatQueryService
-    from models.entities import ChatMessage, ChatResponse
+    from models import ChatMessage, ChatResponse
 except ImportError:
     from backend.chat.config import config
     from backend.chat.repositories.neo4j_reader import Neo4jGraphReader
@@ -45,7 +45,7 @@ except ImportError:
     from backend.chat.services.gemini_service import GeminiLLMService
     from backend.chat.services.embedding_service import QueryEmbeddingService
     from backend.chat.services.chat_service import ChatQueryService
-    from backend.chat.models.entities import ChatMessage, ChatResponse
+    from backend.chat.models import ChatMessage, ChatResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -111,17 +111,17 @@ def startup():
         db_reader=_db_reader,
         llm_service=llm_service,
         embedding_service=_embedding_service,
-        semantic_top_k=config.gemini.hybrid_search_top_k,
+        semantic_top_k=config.gemini.semantic_search_top_k,
         search_service=_search_service,
     )
     
     logger.info(
         "Chat API initialised successfully (Neo4j: %s, LLM: %s, Embedding: %s, "
-        "vector_top_k=%d, fulltext_top_k=%d, hybrid_top_k=%d)",
+        "vector_top_k=%d, fulltext_top_k=%d, semantic_top_k=%d)",
         config.neo4j.uri, config.gemini.model_name, config.gemini.embedding_model,
         config.gemini.vector_search_top_k,
         config.gemini.fulltext_search_top_k,
-        config.gemini.hybrid_search_top_k,
+        config.gemini.semantic_search_top_k,
     )
 
 

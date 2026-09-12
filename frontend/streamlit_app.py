@@ -480,19 +480,14 @@ def _generate_title(messages: list) -> str:
     return "New Conversation"
 
 
-def _trigger_bg_title(messages: list, session_id: str):
+def _trigger_bg_title(messages: list, sess_dict: dict):
     """Run conversation title generation asynchronously in background."""
     def _worker():
         try:
             title = _generate_title(messages)
             if title and title != "New Conversation":
-                sf = _session_file(session_id)
-                if sf.exists():
-                    with open(sf, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    data["title"] = title
-                    with open(sf, "w", encoding="utf-8") as f:
-                        json.dump(data, f, ensure_ascii=False, indent=2)
+                sess_dict["title"] = title
+                _save_session(sess_dict)
         except Exception:
             pass
 
@@ -832,5 +827,5 @@ if query_to_run:
     # ── Non-blocking LLM title generation after first complete exchange ──
     if not st.session_state.title_generated and len(sess["messages"]) >= 2:
         title_msgs = [{"role": m["role"], "content": m["content"]} for m in sess["messages"][:3]]
-        _trigger_bg_title(title_msgs, sess["id"])
+        _trigger_bg_title(title_msgs, sess)
         st.session_state.title_generated = True
