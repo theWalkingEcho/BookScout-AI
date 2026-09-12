@@ -653,8 +653,8 @@ stats = health.get("stats", {}) if health else {}
 
 st.markdown(f"""
 <div class="hero-wrap">
-    <div class="hero-title">📖 Sri Lankan Bookstore Price Finder</div>
-    <div class="hero-sub">Compare prices &amp; availability across all major Sri Lankan bookstores instantly.</div>
+    <div class="hero-title">📖 BookScout AI</div>
+    <div class="hero-sub">AI-Powered Book Discovery</div>
 </div>
 """, unsafe_allow_html=True)
 
