@@ -38,7 +38,7 @@
 
 ## ✨ Key Features
 
-- 🕷️ **Intelligent Web Scraping Pipeline**: Supports multi-threaded BFS crawling, XML sitemap discovery, Next.js `__NEXT_DATA__` structured data extraction, JSON-LD schema parsing, and Cloudflare anti-bot bypass.
+- 🕷️ **Intelligent Web Scraping Pipeline**: Supports multi-threaded BFS crawling, XML sitemap discovery, Next.js `__NEXT_DATA__` structured data extraction, JSON-LD schema parsing, etc.
 - 🧹 **Robust Data Cleaning & Normalization**: Standardizes ISBNs, parses complex currency strings, normalizes book titles, filters author names, and detects duplicate listings.
 - 🧬 **Graph-Native Storage (Neo4j)**: Models books, authors, categories, stores, and individual store listings as connected entities with property graphs.
 - 🧠 **Hybrid Semantic + Keyword Search**: Combines **Neo4j Vector Index (3072-dimensional cosine similarity)** powered by Google Gemini with **Neo4j Fulltext Lucene Search** and LLM-generated Cypher queries.
@@ -119,7 +119,6 @@ book-inventory-finder/
 ├── .env.example                     # Environment secrets & config template
 ├── .env                             # Active environment configuration (git-ignored)
 ├── README.md                        # Documentation & setup guide
-├── sample_queries.txt               # Collection of sample natural language API queries
 │
 ├── backend/
 │   ├── indexer/                     # Data scraping, cleaning, and graph indexing
@@ -137,15 +136,19 @@ book-inventory-finder/
 │   │   │   └── scheduler.py         # Weekly update & stale inventory cleanup
 │   │   ├── cleaner.py               # Price, ISBN, and text data sanitization
 │   │   ├── config.py                # Indexer configuration loader
-│   │   ├── config.example.py        # Static configuration reference
 │   │   ├── requirements.txt         # Indexer Python dependencies
 │   │   └── run_indexer.py           # Main CLI entry point for scraping & indexing
 │   │
 │   └── chat/                        # Natural Language Query API & Search Engine
 │       ├── models/
-│       │   └── entities.py          # API DTOs (ChatMessage, ChatResponse, CypherResult)
+│       │   ├── book_detail.py       # API DTO for Book details
+│       │   ├── book_listing_offer.py# API DTO for store listings
+│       │   ├── chat_message.py      # Chat message models
+│       │   ├── chat_response.py     # Chat response wrapper
+│       │   └── cypher_query_result.py# Cypher return type wrapper
 │       ├── repositories/
-│       │   └── neo4j_reader.py      # Neo4j read client, vector & hybrid search
+│       │   ├── neo4j_reader.py      # Neo4j read client, basic queries
+│       │   └── neo4j_search.py      # Vector & hybrid search implementations
 │       ├── services/
 │       │   ├── chat_service.py      # Multi-phase search & synthesis orchestrator
 │       │   ├── embedding_service.py # Query vector generation
@@ -166,34 +169,15 @@ book-inventory-finder/
 
 Create a `.env` file in the root directory of the project. Both `backend/indexer`, `backend/chat`, and `frontend` are configured to automatically load the root `.env` file.
 
-### Environment Variable Reference
+To keep sensitive credentials secure, we do not list example API keys or passwords here. Please refer to the `.env.example` file in the root directory for a complete list of required environment variables and their formats.
 
-| Variable | Required | Default | Description | Example |
-| :--- | :---: | :---: | :--- | :--- |
-| `NEO4J_URI` | **Yes** | — | Bolt or Neo4j+s URI for your Neo4j instance | `neo4j+s://xxxx.databases.neo4j.io` or `bolt://localhost:7687` |
-| `NEO4J_USER` | **Yes** | `neo4j` | Database username | `neo4j` |
-| `NEO4J_PASSWORD` | **Yes** | — | Database password | `YourSecretPassword123` |
-| `NEO4J_DATABASE` | No | `bookstore-inventory` | Target Neo4j database name (use `neo4j` for AuraDB Free) | `bookstore-inventory` or `neo4j` |
-| `GEMINI_API_KEY` | **Yes** | — | Google Gemini API Key from Google AI Studio | `AIzaSy...` |
-| `GEMINI_MODEL` | No | `gemini-3.6-flash` | LLM model for Cypher generation & response synthesis | `gemini-3.6-flash` or `gemini-1.5-flash` |
-| `GEMINI_TEMPERATURE` | No | `0.2` | Temperature for LLM inference | `0.2` |
-| `EMBEDDING_MODEL` | No | `gemini-embedding-2` | Google model for generating vector embeddings | `gemini-embedding-2` |
-| `EMBEDDING_DIMENSIONS` | No | `3072` | Embedding vector dimensions (matches Neo4j vector index) | `3072` |
-| `SEMANTIC_SEARCH_TOP_K` | No | `15` | Maximum semantic vector matches to retrieve per query | `15` |
-| `SCRAPE_LIMIT` | No | `None` | Max product pages to scrape per store (`None` = unlimited) | `500` or `None` |
-| `SCRAPE_BATCH_SIZE` | No | `50` | Number of listings per database commit batch | `50` |
-| `SCRAPE_WORKERS` | No | `8` | Number of concurrent scraper worker threads | `8` |
-| `STORE_CONFIGS_JSON` | No | *See below* | JSON array defining target bookstores to scrape | *JSON array string* |
-| `API_URL` | No | `http://localhost:8000` | Backend API URL used by the Streamlit frontend | `http://localhost:8000` |
-| `APP_HOST` | No | `0.0.0.0` | Host interface for the FastAPI backend | `0.0.0.0` |
-| `APP_PORT` | No | `8000` | Port for the FastAPI backend | `8000` |
-| `APP_DEBUG` | No | `false` | Enable verbose FastAPI debug logs | `false` |
+**Core Secrets Needed:**
+- `NEO4J_URI`
+- `NEO4J_USER`
+- `NEO4J_PASSWORD`
+- `GEMINI_API_KEY`
 
----
-
-### Ready-to-Use `.env` Template
-
-Copy `.env.example` to `.env` and fill in your credentials:
+Copy `.env.example` to `.env` and fill in your credentials.
 
 ---
 
@@ -298,6 +282,26 @@ python run_indexer.py --check-embeddings --reembed
 ```bash
 python run_indexer.py --no-embed
 ```
+
+### Automated Indexing (GitHub Actions)
+
+This project includes a GitHub Actions workflow (`.github/workflows/indexer.yml`) that automates the scraper and embedding generation.
+
+It is scheduled to run:
+- **Daily (02:00 UTC)**: Checks for and generates any missing vector embeddings.
+- **Weekly (Sun 00:00 UTC)**: Runs an incremental sync to update prices, stock, and new arrivals.
+- **Monthly (1st at 00:00 UTC)**: Performs a full database refresh.
+
+You can also trigger these tasks manually from the **Actions** tab in GitHub by selecting the "Bookstore Indexer" workflow.
+
+**Required GitHub Secrets:**
+To allow GitHub Actions to run, navigate to your repository's **Settings > Secrets and variables > Actions > New repository secret** and add the following keys from your `.env` file:
+- `NEO4J_URI`
+- `NEO4J_USER`
+- `NEO4J_PASSWORD`
+- `NEO4J_DATABASE`
+- `GEMINI_API_KEY`
+- `STORE_CONFIGS_JSON` (Optional, if overriding default stores)
 
 ---
 
@@ -497,7 +501,7 @@ Here are sample queries you can try in the Streamlit UI or via `POST /chat`:
   ```
 
 ### 4. Scraper returns 0 listings
-- **Cause**: Website HTML layout changed, or anti-bot challenge encountered.
+- **Cause**: Website HTML layout changed.
 - **Fix**:
   1. Verify target website URLs in `STORE_CONFIGS_JSON`.
   2. Ensure `cloudscraper` and `beautifulsoup4` are up to date:
