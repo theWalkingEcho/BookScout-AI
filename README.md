@@ -8,20 +8,21 @@
 
 1. [Overview](#-overview)
 2. [Key Features](#-key-features)
-3. [System Architecture & How It Works](#-system-architecture--how-it-works)
-4. [Project Structure](#-project-structure)
-5. [Environment Variables & Secrets Configuration](#-environment-variables--secrets-configuration)
-6. [Prerequisites](#-prerequisites)
-7. [Step-by-Step Setup Guide](#-step-by-step-setup-guide)
-8. [Running the Application](#-running-the-application)
+3. [Tech Stack](#-tech-stack)
+4. [System Architecture & How It Works](#-system-architecture--how-it-works)
+5. [Project Structure](#-project-structure)
+6. [Environment Variables & Secrets Configuration](#-environment-variables--secrets-configuration)
+7. [Prerequisites](#-prerequisites)
+8. [Step-by-Step Setup Guide](#-step-by-step-setup-guide)
+9. [Running the Application](#-running-the-application)
    - [Phase 1: Scraping & Indexing Knowledge Graph](#phase-1-scraping--indexing-the-knowledge-graph)
    - [Phase 2: Launching Backend Chat API](#phase-2-launching-the-backend-chat-api)
    - [Phase 3: Launching Frontend Chatbot UI](#phase-3-launching-the-frontend-chatbot-ui)
-9. [API Endpoints & Reference](#-api-endpoints--reference)
-10. [Database Graph Schema & Vector Indexes](#-database-graph-schema--vector-indexes)
-11. [Sample Queries & Chatbot Capabilities](#-sample-queries--chatbot-capabilities)
-12. [Troubleshooting & FAQ](#-troubleshooting--faq)
-13. [License](#-license)
+10. [API Endpoints & Reference](#-api-endpoints--reference)
+11. [Database Graph Schema & Vector Indexes](#-database-graph-schema--vector-indexes)
+12. [Sample Queries & Chatbot Capabilities](#-sample-queries--chatbot-capabilities)
+13. [Troubleshooting & FAQ](#-troubleshooting--faq)
+14. [License](#-license)
 
 ---
 
@@ -45,6 +46,16 @@
 - ⚡ **High-Performance FastAPI Backend**: REST API with real-time multi-store consolidation, health checks, live schema introspection, and conversational memory.
 - 🎨 **Modern Streamlit Frontend UI**: Premium dark-mode interface featuring real-time streaming responses, price comparison tables, and dynamic follow-up suggestions.
 - 🔄 **Incremental & Full Refresh Synchronization**: Sync new arrivals, update existing stock and prices, and auto-prune stale books.
+
+---
+
+## 💻 Tech Stack
+
+- **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance async REST APIs.
+- **Database & Vector Search**: [Neo4j](https://neo4j.com/) - Graph native storage and 3072-dimensional vector indexing.
+- **AI & Embeddings**: [Google Gemini](https://deepmind.google/technologies/gemini/) - LLM-generated Cypher queries, natural language synthesis, and vector embeddings.
+- **Frontend / UI**: [Streamlit](https://streamlit.io/) - Real-time conversational chat interface.
+- **Web Scraping**: `cloudscraper`, `beautifulsoup4` - Multi-threaded storefront crawling and Next.js / JSON-LD parsing.
 
 ---
 
