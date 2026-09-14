@@ -1,7 +1,13 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from chat.models.book_listing_offer import BookListingOffer
+try:
+    from models.book_listing_offer import BookListingOffer
+except ImportError:
+    try:
+        from chat.models.book_listing_offer import BookListingOffer
+    except ImportError:
+        from backend.chat.models.book_listing_offer import BookListingOffer
 
 
 @dataclass

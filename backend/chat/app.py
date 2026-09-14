@@ -145,6 +145,7 @@ class ChatResponseOut(BaseModel):
     records_count: int = 0
     suggestions: List[str] = []
     execution_time_ms: float = 0.0
+    latency_breakdown: Optional[Dict[str, float]] = None
     error: Optional[str] = None
     sources: List[str] = []
 
@@ -218,6 +219,7 @@ def chat(request: ChatRequest):
         records_count=len(result.sources) if result.sources else 0,
         suggestions=result.followup_suggestions or [],
         execution_time_ms=result.execution_time_ms,
+        latency_breakdown=result.latency_breakdown,
         error=result.error,
         sources=result.sources or [],
     )

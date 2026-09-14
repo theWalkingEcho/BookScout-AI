@@ -1,6 +1,7 @@
 import re
 import json
 import time
+import hashlib
 import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
@@ -106,18 +107,49 @@ class ILLMServiceClient(ABC):
         pass
 
 
+# ---------------------------------------------------------------------------
+# Static portion of the Cypher-generation system prompt.
+# This never changes at runtime — only the dynamic schema block (injected
+# per call) changes, and only when Neo4j schema actually mutates.
+# ---------------------------------------------------------------------------
+_CYPHER_SYSTEM_PROMPT_STATIC = """\
+You are an expert Neo4j Cypher query generator and domain classifier for a Sri Lankan Bookstore Inventory & Price Comparison Knowledge Graph.
+
+DOMAIN SCOPE:
+- IN-SCOPE: Books, authors, genres, publishers, bookstore inventory, prices, availability, store comparisons.
+- OUT-OF-SCOPE: Weather, politics, coding/programming, sports, science, recipes — anything unrelated to books or bookstores.
+
+CRITICAL GUARDRAIL:
+If the question is OUT-OF-SCOPE, output EXACTLY: OUT_OF_SCOPE
+
+GRAPH SCHEMA:
+{schema_block}
+
+RULES (strict):
+- Output ONE valid read-only Cypher query (no CREATE/MERGE/DELETE/SET/ALTER).
+- Case-insensitive matching: toLower(b.title) CONTAINS toLower('keyword').
+- ALWAYS return: b.title, b.isbn, author name(s), category name(s), s.name, r.price, r.originalPrice, r.currency, r.inStock, r.url.
+- For cheapest/best-price queries: ORDER BY r.price ASC, WHERE r.price > 0.
+- Include LIMIT (default 20).
+- Output ONLY the Cypher query in a ```cypher block (or OUT_OF_SCOPE).
+"""
+
+
 class GeminiLLMService(ILLMServiceClient):
     """
     Infrastructure implementation of ILLMServiceClient using Google Gemini API.
     Handles Text-to-Cypher translation, Schema grounding, and Response synthesis.
     """
 
-    def __init__(self, api_key: str, model_name: str = "gemini-3.6-flash", temperature: float = 0.2):
+    def __init__(self, api_key: str, model_name: str, temperature: float = 0.2):
         self.api_key = api_key
         self.model_name = model_name
         self.temperature = temperature
         self._client = None
         self._sdk_type: Optional[str] = None
+        # Schema fingerprint cache: rebuilt only when Neo4j schema changes.
+        self._schema_fingerprint: Optional[str] = None
+        self._cached_cypher_system_prompt: Optional[str] = None
         self._init_client()
 
     def _init_client(self):
@@ -221,61 +253,53 @@ class GeminiLLMService(ILLMServiceClient):
             cleaned = cleaned[:-1].strip()
         return cleaned
 
+    # ------------------------------------------------------------------
+    # Schema-fingerprint-based system prompt caching
+    # ------------------------------------------------------------------
+
+    def _build_cypher_system_prompt(self, schema_context: str) -> str:
+        """
+        Returns the full Cypher-generation system prompt.
+
+        The expensive static portion is built once and cached.  It is only
+        rebuilt when the schema_context string actually changes (detected via
+        an MD5 fingerprint), so repeated calls with the same schema pay
+        zero string-formatting cost.
+        """
+        fingerprint = hashlib.md5(schema_context.encode("utf-8")).hexdigest()
+        if fingerprint != self._schema_fingerprint or self._cached_cypher_system_prompt is None:
+            logger.info(
+                "Schema fingerprint changed (%s → %s) — rebuilding Cypher system prompt.",
+                self._schema_fingerprint,
+                fingerprint,
+            )
+            self._schema_fingerprint = fingerprint
+            self._cached_cypher_system_prompt = _CYPHER_SYSTEM_PROMPT_STATIC.format(
+                schema_block=schema_context
+            )
+        return self._cached_cypher_system_prompt
+
     def generate_cypher(
         self,
         user_query: str,
         chat_history: List[ChatMessage],
         schema_context: str,
     ) -> str:
-        system_instruction = f"""
-You are an expert Neo4j Cypher query generator and domain classifier for a Sri Lankan Bookstore Inventory & Price Comparison Knowledge Graph.
-
-DOMAIN SCOPE:
-- IN-SCOPE: Questions regarding books, novels, literature, authors, genres, categories, publishers, bookstore inventory, book prices, availability, stock, store comparisons, and reading recommendations.
-- OUT-OF-SCOPE: General knowledge trivia (e.g. weather, politics, non-book products, coding/programming, sports, general science, math equations, recipes) that is completely unrelated to books, bookstores, or authors.
-
-CRITICAL GUARDRAIL:
-If the user's question is OUT-OF-SCOPE and has nothing to do with books, authors, bookstores, reading, or book pricing, output EXACTLY:
-OUT_OF_SCOPE
-
-GRAPH SCHEMA:
-1. Nodes:
-   - `(:Book)`: properties [isbn, title, normalizedTitle, format, publisher, language, description, coverImage, inStock, textEmbedding]
-   - `(:Author)`: properties [name]
-   - `(:Category)`: properties [name]
-   - `(:Store)`: properties [name, website, currency] (e.g. the bookstores indexed in the database)
-
-2. Relationships:
-   - `(:Book)-[:WRITTEN_BY]->(:Author)`
-   - `(:Book)-[:IN_CATEGORY]->(:Category)`
-   - `(:Book)-[r:HAS_LISTING]->(:Store)`:
-     Properties on [r:HAS_LISTING]: [listingId, price (float), originalPrice (float), inStock (boolean), url, currency, lastScraped]
-
-RULES:
-- ONLY output a single valid, read-only Cypher query. Do NOT use CREATE, MERGE, DELETE, SET, or ALTER.
-- Use case-insensitive matching: `toLower(b.title) CONTAINS toLower('keyword')` or `toLower(a.name) CONTAINS toLower('author')` or `toLower(c.name) CONTAINS toLower('genre')` or `toLower(s.name) CONTAINS toLower('store')`.
-- ALWAYS RETURN rich informative fields:
-  - Book title (`b.title`), ISBN (`b.isbn`), author name(s), category name(s)
-  - Store name (`s.name`)
-  - Listing price (`r.price`), original price (`r.originalPrice`), currency (`r.currency`), stock status (`r.inStock`), and direct url (`r.url`)
-- When asking for "cheapest" or "best price", ORDER BY `r.price ASC` and filter `WHERE r.price > 0`.
-- Include LIMIT (default 20, or specific limit requested by user).
-- Output ONLY the Cypher query inside a ```cypher block or plain text without explanations (or OUT_OF_SCOPE).
-
-DYNAMIC CONTEXT:
-{schema_context}
-"""
+        # Use fingerprint-cached system prompt — rebuilt only on schema change.
+        system_instruction = self._build_cypher_system_prompt(schema_context)
 
         history_text = ""
         if chat_history:
             recent = chat_history[-4:]
-            history_text = "Recent Conversation History:\n" + "\n".join([f"{msg.role}: {msg.content}" for msg in recent]) + "\n\n"
+            history_text = "Recent Conversation History:\n" + "\n".join(
+                [f"{msg.role}: {msg.content}" for msg in recent]
+            ) + "\n\n"
 
-        prompt = f"""
-{history_text}User Question: {user_query}
-
-Generate the most accurate Neo4j Cypher query to answer the user's question, or return OUT_OF_SCOPE if unrelated to books/bookstores.
-"""
+        prompt = (
+            f"{history_text}"
+            f"User Question: {user_query}\n\n"
+            "Generate the Cypher query, or return OUT_OF_SCOPE if unrelated to books/bookstores."
+        )
         raw_response = self._call_gemini(prompt, system_instruction=system_instruction)
         return self._clean_cypher_output(raw_response)
 
@@ -588,30 +612,40 @@ GRAPH SCHEMA:
 
     def generate_title(self, messages: List[Dict[str, str]]) -> str:
         """
-        Generate a short 4-6 word conversation title from the first few messages.
+        Generate a short 3-5 word conversation title based on both the question and answer generated.
         Uses a fast, lightweight Gemini call.
         """
         if not messages:
             return "New Conversation"
 
-        convo_snippet = "\n".join(
-            f"{m.get('role', 'user').capitalize()}: {m.get('content', '')[:200]}"
-            for m in messages[:3]
-        )
+        user_q = ""
+        asst_a = ""
+        for m in messages[:3]:
+            role = m.get("role", "user")
+            content = m.get("content", "").strip()
+            if role == "user" and not user_q:
+                user_q = content
+            elif role == "assistant" and not asst_a:
+                asst_a = content
+
         prompt = (
-            f"Based on this short conversation snippet, generate a concise 4 to 6 word "
-            f"title that captures the main topic. Output ONLY the title — no quotes, no punctuation at end.\n\n"
-            f"{convo_snippet}"
+            f"Generate a concise, high-quality 3 to 5 word conversation title capturing the specific topic "
+            f"based on BOTH the user's question and the AI assistant's response.\n\n"
+            f"User Question: {user_q[:300]}\n"
+            f"AI Response: {asst_a[:300]}\n\n"
+            f"Requirements:\n"
+            f"- 3 to 5 words max\n"
+            f"- Specific to topic, author, genre, or query (e.g. 'Stephen King Books Under $20', 'Harry Potter Pricing', 'Python Machine Learning Guides')\n"
+            f"- Output ONLY the title text — no quotes, no markdown, no period at end."
         )
         try:
             raw = self._call_gemini(prompt, system_instruction=None, max_retries=2)
-            # Clean up: strip quotes, periods, leading/trailing whitespace
             title = raw.strip().strip('"').strip("'").rstrip(".")
-            # Truncate if too long
             if len(title) > 60:
                 title = title[:57] + "..."
             return title or "New Conversation"
         except Exception as e:
             logger.warning("generate_title failed: %s", e)
             return "New Conversation"
+
 

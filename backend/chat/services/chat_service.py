@@ -274,24 +274,13 @@ class ChatQueryService:
             try:
                 query_result: CypherQueryResult = self.db_reader.execute_read_query(cypher_query)
                 if query_result.error:
-                    logger.warning("Cypher query failed: %s. Attempting self-repair...", query_result.error)
-                    repair_prompt = (
-                        f"The following Cypher query resulted in an error:\n{cypher_query}\n"
-                        f"Error message: {query_result.error}\n"
-                        f"Fix the Cypher query for the user question: '{user_query}'"
+                    # Self-repair disabled: avoid a costly second LLM call.
+                    # Hybrid search results (already fetched in parallel) are used as fallback.
+                    logger.warning(
+                        "Cypher query failed — falling back to hybrid-only results. Error: %s",
+                        query_result.error,
                     )
-                    try:
-                        fixed_cypher = self.llm_service.generate_cypher(
-                            user_query=repair_prompt,
-                            chat_history=[],
-                            schema_context=schema_context,
-                        )
-                        if fixed_cypher != "OUT_OF_SCOPE":
-                            query_result = self.db_reader.execute_read_query(fixed_cypher)
-                            if not query_result.error:
-                                cypher_query = fixed_cypher
-                    except Exception as repair_err:
-                        logger.error("Repair failed: %s", repair_err)
+                    query_result = type(query_result)(query=cypher_query, records=[], error=None)
 
                 if not query_result.error and query_result.records:
                     cypher_records = query_result.records
@@ -302,6 +291,40 @@ class ChatQueryService:
         merged_records = self._consolidate_and_merge_results(hybrid_records, cypher_records)[:self.semantic_top_k]
         sources = [r.get("_source", "hybrid") for r in merged_records]
         return False, cypher_query, merged_records, sources
+
+    @staticmethod
+    def _compact_records_for_prompt(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Trims verbose descriptions and raw vectors from book records to minimize synthesis prompt token count."""
+        compacted = []
+        for r in records:
+            entry = {
+                "title": r.get("title"),
+                "isbn": r.get("isbn"),
+                "authors": r.get("authors"),
+                "categories": r.get("categories"),
+            }
+            listings = r.get("listings")
+            if isinstance(listings, list):
+                entry["listings"] = [
+                    {
+                        "store": l.get("store"),
+                        "price": l.get("price"),
+                        "originalPrice": l.get("originalPrice"),
+                        "currency": l.get("currency", "LKR"),
+                        "inStock": l.get("inStock", True),
+                    }
+                    for l in listings if isinstance(l, dict)
+                ]
+            elif "store" in r or "price" in r:
+                entry["listings"] = [{
+                    "store": r.get("store") or r.get("store_name"),
+                    "price": r.get("price"),
+                    "originalPrice": r.get("originalPrice") or r.get("original_price"),
+                    "currency": r.get("currency", "LKR"),
+                    "inStock": r.get("inStock") or r.get("in_stock", True),
+                }]
+            compacted.append(entry)
+        return compacted
 
     # ------------------------------------------------------------------
     # Main execute method (synchronous)
@@ -319,15 +342,17 @@ class ChatQueryService:
         schema_context = self._get_schema_context()
 
         # 2. Parallel retrieval: Cypher generation + Hybrid search
+        t_retrieval_start = time.perf_counter()
         is_out_of_scope, cypher_query, merged_records, sources = self._retrieve_records_parallel(
             user_query=user_query,
             history=history,
             schema_context=schema_context,
         )
+        retrieval_ms = (time.perf_counter() - t_retrieval_start) * 1000.0
 
         # If detected out of scope, return fast out-of-scope response
         if is_out_of_scope:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            total_ms = (time.perf_counter() - start_time) * 1000.0
             out_of_scope_msg = (
                 "⚠️ **Out of Scope Query**\n\n"
                 "I am an AI assistant specialized exclusively in **Sri Lankan Bookstore Inventory, Book Pricing, Availability, and Authors** "
@@ -343,7 +368,12 @@ class ChatQueryService:
                     "What books are available across the bookstores?",
                     "Books by Colleen Hoover under 3000 LKR",
                 ],
-                execution_time_ms=round(elapsed_ms, 2),
+                execution_time_ms=round(total_ms, 2),
+                latency_breakdown={
+                    "retrieval_ms": round(retrieval_ms, 2),
+                    "synthesis_ms": 0.0,
+                    "total_ms": round(total_ms, 2),
+                },
                 error=None,
                 query_used="OUT_OF_SCOPE (Domain Guardrail)",
                 sources=[],
@@ -354,27 +384,31 @@ class ChatQueryService:
             len(merged_records),
         )
 
-        # 3. Synthesize natural language response & suggestions in one LLM call
+        # 3. Compact records for synthesis prompt token efficiency
+        compact_records = self._compact_records_for_prompt(merged_records)
+
+        # 4. Synthesize natural language response & suggestions in one LLM call
+        t_synth_start = time.perf_counter()
         suggestions = []
         try:
             if hasattr(self.llm_service, "synthesize_response_with_suggestions"):
                 answer, suggestions = self.llm_service.synthesize_response_with_suggestions(
                     user_query=user_query,
                     cypher_query=cypher_query or "Hybrid Search (Vector + Full-text Keyword)",
-                    query_results=merged_records,
+                    query_results=compact_records,
                     chat_history=history,
                 )
             else:
                 answer = self.llm_service.synthesize_response(
                     user_query=user_query,
                     cypher_query=cypher_query or "Hybrid Search (Vector + Full-text Keyword)",
-                    query_results=merged_records,
+                    query_results=compact_records,
                     chat_history=history,
                 )
                 suggestions = self.llm_service.generate_followup_suggestions(
                     user_query=user_query,
                     assistant_response=answer,
-                    query_results=merged_records,
+                    query_results=compact_records,
                 )
         except Exception as e:
             logger.error("Response synthesis failed: %s", e)
@@ -388,12 +422,25 @@ class ChatQueryService:
                 "Show available thriller books",
             ]
 
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+        synthesis_ms = (time.perf_counter() - t_synth_start) * 1000.0
+        total_ms = (time.perf_counter() - start_time) * 1000.0
+
+        breakdown = {
+            "retrieval_ms": round(retrieval_ms, 2),
+            "synthesis_ms": round(synthesis_ms, 2),
+            "total_ms": round(total_ms, 2),
+        }
+
+        logger.info(
+            "Query completed in %.2fms (Retrieval: %.2fms, Synthesis: %.2fms)",
+            total_ms, retrieval_ms, synthesis_ms,
+        )
 
         return ChatResponse(
             answer=answer,
             followup_suggestions=suggestions,
-            execution_time_ms=round(elapsed_ms, 2),
+            execution_time_ms=round(total_ms, 2),
+            latency_breakdown=breakdown,
             error=None,
             query_used=cypher_query or "Hybrid Search (Vector + Full-text Keyword)",
             sources=sources,
@@ -413,7 +460,7 @@ class ChatQueryService:
         Yields dicts with types:
           - {"type": "start", "cypher_query": ..., "sources": ..., "records_count": ...}
           - {"type": "token", "content": ...}
-          - {"type": "done", "suggestions": ..., "execution_time_ms": ..., "sources": ...}
+          - {"type": "done", "suggestions": ..., "execution_time_ms": ..., "latency_breakdown": ..., "sources": ...}
         """
         start_time = time.perf_counter()
         history = chat_history or []
@@ -427,14 +474,16 @@ class ChatQueryService:
         }
 
         # Concurrent retrieval: Cypher generation + Hybrid search
+        t_retrieval_start = time.perf_counter()
         is_out_of_scope, cypher_query, merged_records, sources = self._retrieve_records_parallel(
             user_query=user_query,
             history=history,
             schema_context=schema_context,
         )
+        retrieval_ms = (time.perf_counter() - t_retrieval_start) * 1000.0
 
         if is_out_of_scope:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            total_ms = (time.perf_counter() - start_time) * 1000.0
             out_of_scope_msg = (
                 "⚠️ **Out of Scope Query**\n\n"
                 "I am an AI assistant specialized exclusively in **Sri Lankan Bookstore Inventory, Book Pricing, Availability, and Authors** "
@@ -457,7 +506,12 @@ class ChatQueryService:
                     "What books are available across the bookstores?",
                     "Books by Colleen Hoover under 3000 LKR",
                 ],
-                "execution_time_ms": round(elapsed_ms, 2),
+                "execution_time_ms": round(total_ms, 2),
+                "latency_breakdown": {
+                    "retrieval_ms": round(retrieval_ms, 2),
+                    "synthesis_ms": 0.0,
+                    "total_ms": round(total_ms, 2),
+                },
                 "sources": [],
                 "cypher_query": "OUT_OF_SCOPE",
             }
@@ -484,12 +538,15 @@ class ChatQueryService:
             "records_count": len(merged_records),
         }
 
-        # Stream response synthesis
+        # Stream response synthesis with compacted records
+        compact_records = self._compact_records_for_prompt(merged_records)
+        t_synth_start = time.perf_counter()
+
         try:
             stream_gen = self.llm_service.synthesize_response_stream(
                 user_query=user_query,
                 cypher_query=cypher_query or "Hybrid Search (Vector + Full-text Keyword)",
-                query_results=merged_records,
+                query_results=compact_records,
                 chat_history=history,
             )
             final_suggestions = []
@@ -499,11 +556,19 @@ class ChatQueryService:
                 if suggestions:
                     final_suggestions = suggestions
 
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            synthesis_ms = (time.perf_counter() - t_synth_start) * 1000.0
+            total_ms = (time.perf_counter() - start_time) * 1000.0
+            breakdown = {
+                "retrieval_ms": round(retrieval_ms, 2),
+                "synthesis_ms": round(synthesis_ms, 2),
+                "total_ms": round(total_ms, 2),
+            }
+
             yield {
                 "type": "done",
                 "suggestions": final_suggestions,
-                "execution_time_ms": round(elapsed_ms, 2),
+                "execution_time_ms": round(total_ms, 2),
+                "latency_breakdown": breakdown,
                 "sources": sources,
                 "cypher_query": cypher_query or "Hybrid Search (Vector + Full-text Keyword)",
             }
@@ -511,7 +576,13 @@ class ChatQueryService:
             logger.error("Response synthesis stream error: %s", e)
             err_msg = f"Found {len(merged_records)} record(s) in the database, but encountered an error during streaming: {str(e)}"
             yield {"type": "token", "content": err_msg}
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            synthesis_ms = (time.perf_counter() - t_synth_start) * 1000.0
+            total_ms = (time.perf_counter() - start_time) * 1000.0
+            breakdown = {
+                "retrieval_ms": round(retrieval_ms, 2),
+                "synthesis_ms": round(synthesis_ms, 2),
+                "total_ms": round(total_ms, 2),
+            }
             yield {
                 "type": "done",
                 "suggestions": [
@@ -519,7 +590,8 @@ class ChatQueryService:
                     "Compare prices for Atomic Habits",
                     "Show available thriller books",
                 ],
-                "execution_time_ms": round(elapsed_ms, 2),
+                "execution_time_ms": round(total_ms, 2),
+                "latency_breakdown": breakdown,
                 "sources": sources,
                 "cypher_query": cypher_query or "Hybrid Search",
             }

@@ -43,7 +43,7 @@
 - 🧬 **Graph-Native Storage (Neo4j)**: Models books, authors, categories, stores, and individual store listings as connected entities with property graphs.
 - 🧠 **Hybrid Semantic + Keyword Search**: Combines **Neo4j Vector Index (3072-dimensional cosine similarity)** powered by Google Gemini with **Neo4j Fulltext Lucene Search** and LLM-generated Cypher queries.
 - ⚡ **High-Performance FastAPI Backend**: REST API with real-time multi-store consolidation, health checks, live schema introspection, and conversational memory.
-- 🎨 **Modern Streamlit Frontend UI**: Premium dark-mode interface featuring multi-session management, auto-generated chat titles, price comparison tables, and dynamic follow-up suggestions.
+- 🎨 **Modern Streamlit Frontend UI**: Premium dark-mode interface featuring real-time streaming responses, price comparison tables, and dynamic follow-up suggestions.
 - 🔄 **Incremental & Full Refresh Synchronization**: Sync new arrivals, update existing stock and prices, and auto-prune stale books.
 
 ---
@@ -83,9 +83,9 @@ The system consists of three distinct yet interconnected layers:
                                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        4. CLIENT UI (STREAMLIT APP)                         │
-│  - Multi-session chat drawer & session persistence                         │
-│  - Live price comparison badges & markdown renderers                       │
-│  - Instant follow-up chips & quick questions                               │
+│  - Single-session conversational chat interface                             │
+│  - Live price comparison badges & markdown renderers                        │
+│  - Instant follow-up chips & quick questions                                │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -107,8 +107,8 @@ The system consists of three distinct yet interconnected layers:
 
 3. **User Interaction Phase (`frontend/streamlit_app.py`)**:
    - The user chats through a responsive, styled interface.
-   - Active sessions are stored locally in `frontend/chat_sessions/`.
-   - The backend automatically synthesizes a concise chat topic title on the first message.
+   - Conversation history is held in-memory for the duration of the session.
+   - Follow-up suggestions are rendered after each AI response.
 
 ---
 
@@ -158,7 +158,6 @@ book-inventory-finder/
 │       └── requirements.txt         # Chat service Python dependencies
 │
 └── frontend/                        # Client-facing web interface
-    ├── chat_sessions/               # Local storage for persisted chat sessions
     ├── streamlit_app.py             # Streamlit chatbot web application
     └── requirements.txt             # Frontend Python dependencies
 ```
@@ -350,7 +349,6 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
 | `POST` | `/chat` | Natural language multi-store book search, comparison, and synthesis. |
 | `POST` | `/chat/stream` | Real-time NDJSON streaming endpoint for LLM tokens, sources, and suggestions. |
 | `POST` | `/search` | Direct hybrid search returning structured candidates without LLM synthesis. |
-| `POST` | `/generate-title` | Generates a 3-5 word conversation title for chat sessions. |
 
 ### `POST /chat` Request & Response Example
 
@@ -373,6 +371,7 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
     "Show books by James Clear"
   ],
   "execution_time_ms": 342.15,
+  "latency_breakdown": null,
   "error": null,
   "sources": [
     "Atomic Habits - Store 1 (LKR 2450.00)",
