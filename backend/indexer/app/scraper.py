@@ -45,23 +45,33 @@ _CSS_CHARS_RE = re.compile(r"[{};@]|:root|\.bsdg-|\bpx\b|\brem\b", re.IGNORECASE
 _LETTERS_RE = re.compile(r"[a-zA-Z\u0D80-\u0DFF\u0B80-\u0BFF]")
 
 
+_SPEC_BLOB_RE = re.compile(
+    r"\b(?:Format|Publisher|ISBN|ISBN-13|Dimensions|Weight|Page count|Binding|Nill|Nil|\(s\) n/a)\b",
+    re.IGNORECASE,
+)
+
+
 def _clean_author_candidate(candidate: str) -> str:
-    """Clean prefix labels, colons, and hyphens from author strings."""
+    """Clean prefix labels, colons, hyphens, and trailing spec metadata from author strings."""
     if not candidate:
         return ""
-    cleaned = re.sub(r"^\s*(?:Author|By)\s*[:\-–—]?\s*", "", candidate, flags=re.IGNORECASE).strip()
+    # Strip any trailing technical specification blocks
+    cleaned = _SPEC_BLOB_RE.split(candidate)[0].strip()
+    cleaned = re.sub(r"^\s*(?:Author|By|\(s\))\s*[:\-–—]?\s*", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = re.sub(r"^[:\-–—\s]+", "", cleaned).strip()
+    if cleaned.lower() in {"n/a", "(s) n/a", "unknown", "nill", "nil", "none", "null"}:
+        return ""
     return cleaned
 
 
 def _is_plausible_author(text: str) -> bool:
-    """Return True only if *text* looks like a real author name, not CSS or punctuation."""
+    """Return True only if *text* looks like a real author name, not CSS, punctuation, or technical spec blob."""
     if not text or len(text) > 120:
         return False
     # Must contain at least 2 alphabetic characters
     if len(_LETTERS_RE.findall(text)) < 2:
         return False
-    if _CSS_CHARS_RE.search(text):
+    if _CSS_CHARS_RE.search(text) or _SPEC_BLOB_RE.search(text):
         return False
     # All-uppercase strings of > 3 words are more likely a heading/label
     words = text.split()
@@ -436,11 +446,11 @@ class StoreScraper:
 
             image_path = prod.get("image", "")
             if image_path:
-                cover_image = (
-                    image_path
-                    if image_path.startswith("http")
-                    else f"{self.base_url.rstrip('/')}/storage/{image_path.lstrip('/')}"
-                )
+                if image_path.startswith("http"):
+                    cover_image = image_path
+                else:
+                    path_part = re.sub(r'^(?:/storage)?(?:/app/public)?', '', image_path.lstrip('/'))
+                    cover_image = f"{self.base_url.rstrip('/')}/storage/{path_part.lstrip('/')}"
             else:
                 cover_image = ""
 
@@ -687,6 +697,15 @@ class StoreScraper:
             el = soup.select_one(selector)
             if el and el.text.strip():
                 return el.text.strip()
+
+        # Fallback for store title in <title> tag
+        if soup.title and soup.title.string:
+            title_str = soup.title.string
+            if " - " in title_str:
+                parts = title_str.split(" - ")
+                if parts:
+                    return parts[-1].strip()
+
         return ""
 
     def _parse_availability(self, soup: BeautifulSoup) -> bool:
@@ -805,6 +824,15 @@ class StoreScraper:
                 if _is_plausible_author(candidate):
                     return candidate
 
+        # 8. Store specific fallbacks
+        if soup.title and soup.title.string:
+            title_str = soup.title.string
+            parts = title_str.split(" - ")
+            if len(parts) >= 4:
+                candidate = _clean_author_candidate(parts[-2].strip())
+                if _is_plausible_author(candidate):
+                    return candidate
+
         return "Unknown"
 
     def _author_from_jsonld(self, soup: BeautifulSoup) -> Optional[str]:
@@ -907,20 +935,52 @@ class StoreScraper:
         return self.store_name
 
     def _read_cover_image(self, soup: BeautifulSoup) -> str:
-        for selector in [
-            "img.wp-post-image",
-            "img.attachment-shop_single",
-            ".woocommerce-product-gallery img",
-            "img.cover",
-            "img.product-image",
-        ]:
-            img = soup.select_one(selector)
-            if img and img.get("src", ""):
-                return img["src"]
+        # 1. Cover image matching by ISBN
+        og_url = soup.select_one("meta[property='og:url']")
+        page_url = og_url.get("content", "") if og_url else ""
+        isbn_match = re.search(r"\b(97[89]\d{10})\b", page_url)
+        if not isbn_match and soup.title and soup.title.string:
+            isbn_match = re.search(r"\b(97[89]\d{10})\b", soup.title.string)
+        if isbn_match:
+            return f"{self.base_url.rstrip('/')}/image/{isbn_match.group(1)}"
 
-        og = soup.select_one("meta[property='og:image']")
-        if og and og.get("content", ""):
-            return og["content"]
+        # 2. OpenGraph / Twitter Card canonical image meta tags
+        og = soup.select_one("meta[property='og:image'], meta[name='twitter:image']")
+        if og and og.get("content", "").strip():
+            candidate = og["content"].strip()
+            if not any(kw in candidate.lower() for kw in ["logo", "placeholder", "default", "icon"]):
+                return candidate
+
+        # 3. Scoped main product container / gallery images
+        for selector in [
+            ".woocommerce-product-gallery__image img",
+            ".woocommerce-product-gallery img",
+            "div.product img.wp-post-image",
+            ".product-gallery img",
+            ".product-main-image img",
+            ".product-image img",
+            "img.attachment-shop_single",
+            "img.attachment-large",
+            "div.single-product img",
+        ]:
+            for img in soup.select(selector):
+                classes = [c.lower() for c in img.get("class", [])]
+                if "gallery_thumbnail" in classes or "widget" in classes:
+                    continue
+                src = img.get("src", "").strip()
+                if src and not any(kw in src.lower() for kw in ["logo", "placeholder", "mintpay", "koko", "avatar", "icon"]):
+                    return src
+
+        # 4. Fallback selectors across body (excluding known widgets/thumbnails)
+        for selector in ["img.wp-post-image", "img.cover", "img.product-image"]:
+            for img in soup.select(selector):
+                classes = [c.lower() for c in img.get("class", [])]
+                if "gallery_thumbnail" in classes or "widget" in classes:
+                    continue
+                src = img.get("src", "").strip()
+                if src and not any(kw in src.lower() for kw in ["logo", "placeholder", "mintpay", "koko"]):
+                    return src
+
         return ""
 
     def _find_current_price_element(self, soup: BeautifulSoup):
