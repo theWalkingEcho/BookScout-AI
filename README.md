@@ -64,7 +64,7 @@
 
 - **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance async REST & NDJSON streaming APIs.
 - **Database & Vector Search**: [Neo4j](https://neo4j.com/) - Graph native storage and 3072-dimensional vector indexing.
-- **AI & Embeddings**: [Google Gemini](https://deepmind.google/technologies/gemini/) - LLM-generated Cypher queries, natural language response synthesis, conversation title generation, and 3072-dim embeddings (`text-embedding-004`).
+- **AI & Embeddings**: [Google Gemini](https://deepmind.google/technologies/gemini/) - LLM-generated Cypher queries, natural language response synthesis, and 3072-dim embeddings (`text-embedding-004`).
 - **Frontend / UI**: [Streamlit](https://streamlit.io/) - Real-time conversational chat interface with custom token stream image rendering.
 - **Web Scraping**: `cloudscraper`, `beautifulsoup4` - Multi-threaded storefront crawling, cover image harvesting, and JSON-LD parsing.
 - **Automation**: [GitHub Actions](https://github.com/features/actions) - Scheduled workflows for embedding generation and database synchronization.
@@ -100,8 +100,7 @@ The system consists of four distinct yet interconnected layers:
 │  │  ├─ 2. Full-Text Lucene Search (Keyword Fallback)                      │ │
 │  │  ├─ 3. LLM Cypher Generation (Structured queries & aggregations)       │ │
 │  │  ├─ 4. Listing Deduplication & Cover Image Enriched Aggregation        │ │
-│  │  ├─ 5. Gemini Response & NDJSON Token Streaming Synthesis             │ │
-│  │  └─ 6. Live Conversation Title Generator                               │ │
+│  │  └─ 5. Gemini Response & NDJSON Token Streaming Synthesis             │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └───────────────────────────────────────────────────────────────┬─────────────┘
                                                                 ▼

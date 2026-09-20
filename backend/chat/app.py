@@ -264,10 +264,6 @@ def chat_stream(request: ChatRequest):
         },
     )
 
-
-class TitleRequest(BaseModel):
-    messages: List[MessageIn] = []
-
 @app.post("/search", response_model=DirectSearchResponse, tags=["search"])
 def direct_search(request: DirectSearchRequest):
     """
