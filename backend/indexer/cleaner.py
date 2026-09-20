@@ -167,6 +167,16 @@ def _is_plausible_author(text: str) -> bool:
     return True
 
 
+def normalize_cover_image_url(url: Optional[str]) -> Optional[str]:
+    """Clean and normalize cover image URLs generically (trim whitespace, upgrade HTTP to HTTPS)."""
+    if not url or not isinstance(url, str):
+        return url
+    url = url.strip()
+    if url.startswith("http://"):
+        url = "https://" + url[7:]
+    return url
+
+
 def clean_listing(listing: Dict[str, any]) -> Dict[str, any]:
     """Clean textual fields in a scraper listing dict in-place and return it.
 
@@ -179,6 +189,9 @@ def clean_listing(listing: Dict[str, any]) -> Dict[str, any]:
     for key in ("title", "author_name", "category_name", "url", "cover_image"):
         if key in listing and isinstance(listing[key], str):
             listing[key] = remove_css(listing[key]).strip()
+
+    if listing.get("cover_image"):
+        listing["cover_image"] = normalize_cover_image_url(listing["cover_image"])
 
     # Guard: reject CSS-like strings that leaked through as author names
     if not _is_plausible_author(listing.get("author_name", "")):

@@ -1,6 +1,6 @@
 # 📚 BookScout AI — AI-Powered Book Discovery
 
-> **An intelligent, multi-store bookstore inventory aggregator, knowledge graph, and AI shopping assistant powered by Neo4j, Google Gemini, FastAPI, and Streamlit.**
+> **An intelligent, multi-store bookstore inventory aggregator, knowledge graph, visual book discoverer, and AI shopping assistant powered by Neo4j, Google Gemini, FastAPI, and Streamlit.**
 
 ---
 
@@ -28,98 +28,112 @@
 
 ## 🌟 Overview
 
-**BookScout AI** is an end-to-end solution designed to scrape, structure, and query book catalogs across multiple online bookstores. It unifies fragmented bookstore inventories into a centralized **Neo4j Knowledge Graph**, enriches catalog items with **Google Gemini Vector Embeddings**, and provides a conversational AI assistant that helps readers:
+**BookScout AI** is an end-to-end solution designed to scrape, structure, visually present, and query book catalogs across multiple online bookstores. It unifies fragmented bookstore inventories into a centralized **Neo4j Knowledge Graph**, enriches catalog items with **Google Gemini Vector Embeddings** (3072-dimensional) and **Cover Image Harvesting**, and provides a conversational AI assistant that helps readers:
 
-- Compare live book prices and stock availability across multiple retailers.
-- Discover books using natural-language semantic concepts (e.g., *"gripping historical fiction set during wartime"*).
-- Filter by exact author, price threshold, publication genre, and currency.
-- Receive direct purchase links with store-specific price breakdowns.
+- **Compare live book prices and stock availability** across multiple retailers.
+- **View high-quality book cover images** rendered dynamically inline in conversational responses.
+- **Discover books using natural-language semantic concepts** (e.g., *"gripping historical fiction set during wartime"*).
+- **Filter by exact author, price threshold, publication genre, and currency**.
+- **Receive clean, sanitized metadata** without low-quality placeholder noise.
 
 ---
 
 ## ✨ Key Features
 
-- 🕷️ **Intelligent Web Scraping Pipeline**: Supports multi-threaded BFS crawling, XML sitemap discovery, Next.js `__NEXT_DATA__` structured data extraction, JSON-LD schema parsing, etc.
-- 🧹 **Robust Data Cleaning & Normalization**: Standardizes ISBNs, parses complex currency strings, normalizes book titles, filters author names, and detects duplicate listings.
-- 🧬 **Graph-Native Storage (Neo4j)**: Models books, authors, categories, stores, and individual store listings as connected entities with property graphs.
-- 🧠 **Hybrid Semantic + Keyword Search**: Combines **Neo4j Vector Index (3072-dimensional cosine similarity)** powered by Google Gemini with **Neo4j Fulltext Lucene Search** and LLM-generated Cypher queries.
-- ⚡ **High-Performance FastAPI Backend**: REST API with real-time multi-store consolidation, health checks, live schema introspection, and conversational memory.
-- 🎨 **Modern Streamlit Frontend UI**: Premium dark-mode interface featuring real-time streaming responses, price comparison tables, and dynamic follow-up suggestions.
-- 🔄 **Incremental & Full Refresh Synchronization**: Sync new arrivals, update existing stock and prices, and auto-prune stale books.
+- 🖼️ **Automated Cover Image Extraction & Live Visual Rendering**:
+  - Scrapes high-resolution cover images across storefront engines (Next.js `__NEXT_DATA__`, OpenGraph image meta tags, JSON-LD schemas, product HTML elements).
+  - Renders cover image cards inline in real time within the Streamlit chat UI using a custom token stream parser (`_render_custom_stream`).
+- 🕷️ **Intelligent Multi-Store Scraping Pipeline**:
+  - Supports multi-threaded BFS crawling, XML sitemap discovery, structured data extraction (`cloudscraper`, `beautifulsoup4`).
+- 🧹 **Robust Data Cleaning & Metadata Sanitization**:
+  - Standardizes ISBNs, parses complex currency strings, normalizes titles, and filters promotional noise or invalid placeholder metadata (e.g. `(s) n/a`, `Format Publisher Nill`).
+- 🧬 **Graph-Native Storage (Neo4j)**:
+  - Models books, authors, categories, stores, cover images, and individual store listings as connected entities with property graphs.
+- 🧠 **Hybrid Semantic + Keyword Search Engine**:
+  - Combines **Neo4j Vector Index (3072-dimensional cosine similarity)** powered by Google Gemini with **Neo4j Fulltext Lucene Search** and LLM-generated Cypher queries.
+- ⚡ **High-Performance FastAPI REST & NDJSON Streaming Backend**:
+  - Supports synchronous `/chat`, real-time NDJSON streaming `/chat/stream`, direct candidate search `/search`, graph schema introspection `/schema`, and `/health` checks.
+- 🎨 **Modern Streamlit Chat Interface**:
+  - Premium dark-mode UI with live token streaming, custom HTML image cards, follow-up suggestion chips, and responsive layout.
+- 🔄 **Incremental & Scheduled Sync (GitHub Actions)**:
+  - Supports full database refreshes, incremental price/stock syncs, missing embedding backfills, and automated cron updates via GitHub Actions.
 
 ---
 
 ## 💻 Tech Stack
 
-- **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance async REST APIs.
+- **Backend Framework**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance async REST & NDJSON streaming APIs.
 - **Database & Vector Search**: [Neo4j](https://neo4j.com/) - Graph native storage and 3072-dimensional vector indexing.
-- **AI & Embeddings**: [Google Gemini](https://deepmind.google/technologies/gemini/) - LLM-generated Cypher queries, natural language synthesis, and vector embeddings.
-- **Frontend / UI**: [Streamlit](https://streamlit.io/) - Real-time conversational chat interface.
-- **Web Scraping**: `cloudscraper`, `beautifulsoup4` - Multi-threaded storefront crawling and Next.js / JSON-LD parsing.
+- **AI & Embeddings**: [Google Gemini](https://deepmind.google/technologies/gemini/) - LLM-generated Cypher queries, natural language response synthesis, conversation title generation, and 3072-dim embeddings (`text-embedding-004`).
+- **Frontend / UI**: [Streamlit](https://streamlit.io/) - Real-time conversational chat interface with custom token stream image rendering.
+- **Web Scraping**: `cloudscraper`, `beautifulsoup4` - Multi-threaded storefront crawling, cover image harvesting, and JSON-LD parsing.
+- **Automation**: [GitHub Actions](https://github.com/features/actions) - Scheduled workflows for embedding generation and database synchronization.
 
 ---
 
 ## 🏗️ System Architecture & How It Works
 
-The system consists of three distinct yet interconnected layers:
+The system consists of four distinct yet interconnected layers:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           1. INGESTION & INDEXER                            │
 │  ┌──────────────────────┐    ┌─────────────────┐    ┌────────────────────┐  │
 │  │   Bookstore Scraper  │───>│ Data Sanitizer  │───>│  Embedding Service │  │
-│  │ (BFS / Sitemap / SSR)│    │  (cleaner.py)   │    │(gemini-embedding-2)│  │
+│  │ (BFS/Sitemap/Images) │    │  (cleaner.py)   │    │(gemini-embedding-2)│  │
 │  └──────────────────────┘    └─────────────────┘    └─────────┬──────────┘  │
 └───────────────────────────────────────────────────────────────┼─────────────┘
                                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           2. NEO4J KNOWLEDGE GRAPH                          │
-│   (Book) ──[:WRITTEN_BY]──> (Author)                                        │
+│   (Book {coverImage}) ──[:WRITTEN_BY]──> (Author)                           │
 │   (Book) ──[:IN_CATEGORY]──> (Category)                                     │
 │   (Book) ──[:HAS_LISTING {price, stock, url}]──> (Store)                    │
 │   Indexes: Vector Index (3072-dim Cosine) + Fulltext Keyword Index          │
 └───────────────────────────────────────────────────────────────┬─────────────┘
                                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           3. CHAT API (FASTAPI)                             │
+│                           3. CHAT API (FASTAPI REST & STREAMING)            │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │ Hybrid Search Orchestrator (services/chat_service.py)                  │ │
 │  │  ├─ 1. Vector Search (Embed Query -> Cosine Similarity Top-K)         │ │
 │  │  ├─ 2. Full-Text Lucene Search (Keyword Fallback)                      │ │
 │  │  ├─ 3. LLM Cypher Generation (Structured queries & aggregations)       │ │
-│  │  ├─ 4. Cross-Store Listing Deduplication & Price Comparison            │ │
-│  │  └─ 5. Gemini Synthesis (Natural Response + Follow-up Suggestions)     │ │
+│  │  ├─ 4. Listing Deduplication & Cover Image Enriched Aggregation        │ │
+│  │  ├─ 5. Gemini Response & NDJSON Token Streaming Synthesis             │ │
+│  │  └─ 6. Live Conversation Title Generator                               │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └───────────────────────────────────────────────────────────────┬─────────────┘
                                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        4. CLIENT UI (STREAMLIT APP)                         │
-│  - Single-session conversational chat interface                             │
-│  - Live price comparison badges & markdown renderers                        │
-│  - Instant follow-up chips & quick questions                                │
+│  - Real-time NDJSON token streaming with custom image card parser           │
+│  - Live HTML book cover rendering with referrer-policy headers              │
+│  - Price comparison tables & store availability details                     │
+│  - Interactive follow-up suggestion chips                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### End-to-End Workflow
 
-1. **Scraping Phase (`backend/indexer`)**:
-   - `StoreScraper` crawls bookstores configured in `STORE_CONFIGS_JSON`.
-   - Raw HTML and JSON-LD metadata are transformed into standardized listing dictionaries.
+1. **Scraping & Indexing Phase (`backend/indexer`)**:
+   - `StoreScraper` crawls bookstore websites configured in `STORE_CONFIGS_JSON`.
+   - Extracts title, author, category, price, stock status, product link, and **cover image URLs** via JSON-LD, Next.js state, or HTML parser.
    - `clean_listing()` strips promotional noise, normalizes ISBNs, and parses numeric prices.
-   - `EmbeddingService` generates vector embeddings from title, author, category, and description using Google Gemini.
-   - `Neo4jBookstoreRepository` executes atomic Cypher `MERGE` and `SET` operations to update graph nodes and relationships.
+   - `EmbeddingService` generates 3072-dimensional vector embeddings using Google Gemini.
+   - `Neo4jBookstoreRepository` executes atomic Cypher `MERGE` and `SET` operations to write graph nodes and listings.
 
 2. **Query & Hybrid Search Phase (`backend/chat`)**:
-   - The user query is sent to `/chat`.
-   - `ChatQueryService` simultaneously invokes semantic vector similarity against the Neo4j vector index and fulltext search.
-   - If analytical filters (e.g. *"books under LKR 2000"*) are present, `GeminiLLMService` writes dynamic Cypher queries against the live schema.
-   - Results from all candidate sets are deduplicated and merged by ISBN / normalized title.
-   - Gemini formats the response with price tables, store availability, and interactive follow-up suggestions.
+   - User inputs a query via synchronous `POST /chat` or streaming `POST /chat/stream`.
+   - `ChatQueryService` runs vector cosine search and fulltext search in parallel.
+   - `GeminiLLMService` generates target Cypher queries for exact filtering or aggregations when appropriate.
+   - Candidates are merged, deduplicated, and enriched with `coverImage` properties.
+   - Gemini synthesizes the response, mandating inline visual cover images and formatted price comparison tables while suppressing broken hyperlinks.
 
-3. **User Interaction Phase (`frontend/streamlit_app.py`)**:
-   - The user chats through a responsive, styled interface.
-   - Conversation history is held in-memory for the duration of the session.
-   - Follow-up suggestions are rendered after each AI response.
+3. **User Interaction & Live Stream Phase (`frontend/streamlit_app.py`)**:
+   - Streamlit consumes the NDJSON token stream through `_render_custom_stream`.
+   - Inline `<img>` tags and markdown images are parsed live, creating visual cover cards with shadow styling and referrer policies.
+   - Follow-up recommendation chips are rendered immediately after response completion.
 
 ---
 
@@ -127,80 +141,98 @@ The system consists of three distinct yet interconnected layers:
 
 ```
 book-inventory-finder/
-├── .env.example                     # Environment secrets & config template
+├── .env.example                     # Environment configuration template
 ├── .env                             # Active environment configuration (git-ignored)
-├── README.md                        # Documentation & setup guide
+├── README.md                        # Project documentation & setup guide
+│
+├── .github/
+│   └── workflows/
+│       └── indexer.yml              # Scheduled GitHub Actions (daily/weekly indexing)
 │
 ├── backend/
-│   ├── indexer/                     # Data scraping, cleaning, and graph indexing
+│   ├── indexer/                     # Data scraping, cover harvesting & graph indexing
 │   │   ├── app/
-│   │   │   └── scraper.py           # Deep BFS, sitemap & Next.js web scraper
+│   │   │   └── scraper.py           # Multi-threaded BFS, sitemap & Next.js scraper with cover image extraction
 │   │   ├── models/
 │   │   │   ├── dtos.py              # Data Transfer Objects
 │   │   │   └── entities.py          # Domain dataclasses (Book, Author, Store, Listing)
 │   │   ├── repositories/
 │   │   │   ├── bookstore_repository.py       # Abstract repository interface
-│   │   │   └── neo4j_bookstore_repository.py # Neo4j repository implementation
+│   │   │   └── neo4j_bookstore_repository.py # Neo4j graph implementation with cover image support
 │   │   ├── services/
-│   │   │   ├── book_service.py      # Book upsert & batch embedding operations
-│   │   │   ├── embedding_service.py # Gemini embedding generation
-│   │   │   └── scheduler.py         # Weekly update & stale inventory cleanup
-│   │   ├── cleaner.py               # Price, ISBN, and text data sanitization
+│   │   │   ├── book_service.py      # Book upsert & batch vector embedding operations
+│   │   │   ├── embedding_service.py # Gemini 3072-dim embedding service
+│   │   │   └── scheduler.py         # Incremental sync & stale inventory cleanup
+│   │   ├── cleaner.py               # Price, ISBN, title, and metadata sanitization
 │   │   ├── config.py                # Indexer configuration loader
-│   │   ├── requirements.txt         # Indexer Python dependencies
-│   │   └── run_indexer.py           # Main CLI entry point for scraping & indexing
+│   │   ├── requirements.txt         # Indexer dependencies
+│   │   └── run_indexer.py           # CLI entry point for scraping & embedding management
 │   │
-│   └── chat/                        # Natural Language Query API & Search Engine
+│   └── chat/                        # Hybrid Search Engine & FastAPI REST/Streaming API
 │       ├── models/
-│       │   ├── book_detail.py       # API DTO for Book details
-│       │   ├── book_listing_offer.py# API DTO for store listings
-│       │   ├── chat_message.py      # Chat message models
+│       │   ├── book_detail.py       # API model for Book details
+│       │   ├── book_listing_offer.py# API model for Store listing offers
+│       │   ├── chat_message.py      # Chat payload models
 │       │   ├── chat_response.py     # Chat response wrapper
-│       │   └── cypher_query_result.py# Cypher return type wrapper
+│       │   └── cypher_query_result.py# Cypher execution wrapper
 │       ├── repositories/
-│       │   ├── neo4j_reader.py      # Neo4j read client, basic queries
-│       │   └── neo4j_search.py      # Vector & hybrid search implementations
+│       │   ├── neo4j_reader.py      # Graph reader & schema introspection client
+│       │   └── neo4j_search.py      # Vector & hybrid search repository
 │       ├── services/
-│       │   ├── chat_service.py      # Multi-phase search & synthesis orchestrator
-│       │   ├── embedding_service.py # Query vector generation
-│       │   └── gemini_service.py    # LLM Cypher generator & response synthesizer
-│       ├── app.py                   # FastAPI REST API application
-│       ├── config.py                # Chat service configuration loader
-│       └── requirements.txt         # Chat service Python dependencies
+│       │   ├── chat_service.py      # Hybrid search & NDJSON streaming orchestrator
+│       │   ├── embedding_service.py # Query vector generation service
+│       │   └── gemini_service.py    # LLM Cypher builder & visual synthesizer
+│       ├── app.py                   # FastAPI application & REST/streaming routes
+│       ├── config.py                # Chat API configuration loader
+│       └── requirements.txt         # Chat service dependencies
 │
-└── frontend/                        # Client-facing web interface
-    ├── streamlit_app.py             # Streamlit chatbot web application
-    └── requirements.txt             # Frontend Python dependencies
+└── frontend/                        # Interactive Web Interface
+    ├── streamlit_app.py             # Streamlit app with custom live token stream & image rendering
+    └── requirements.txt             # Frontend dependencies
 ```
 
 ---
 
 ## 🔑 Environment Variables & Secrets Configuration
 
-Create a `.env` file in the root directory of the project. Both `backend/indexer`, `backend/chat`, and `frontend` are configured to automatically load the root `.env` file.
+Create a `.env` file in the root directory. All components (`backend/indexer`, `backend/chat`, and `frontend`) automatically load credentials from this root file.
 
-To keep sensitive credentials secure, we do not list example API keys or passwords here. Please refer to the `.env.example` file in the root directory for a complete list of required environment variables and their formats.
+Refer to `.env.example` for full options.
 
-**Core Secrets Needed:**
-- `NEO4J_URI`
-- `NEO4J_USER`
-- `NEO4J_PASSWORD`
-- `GEMINI_API_KEY`
+### Key Secrets & Settings:
 
-Copy `.env.example` to `.env` and fill in your credentials.
+```ini
+# Neo4j Database Settings
+NEO4J_URI=neo4j+s://your-neo4j-instance.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_secure_password
+NEO4J_DATABASE=neo4j
+
+# Google Gemini API Key
+GEMINI_API_KEY=your_gemini_api_key
+
+# Search & Retrieval Configuration
+HYBRID_SEARCH_TOP_K=10
+VECTOR_SEARCH_TOP_K=5
+FULLTEXT_SEARCH_TOP_K=5
+SEMANTIC_SEARCH_TOP_K=5
+
+# Scraper Settings
+SCRAPE_LIMIT=500
+SCRAPE_WORKERS=5
+SCRAPE_BATCH_SIZE=50
+```
 
 ---
 
 ## 🛠️ Prerequisites
 
-Before getting started, make sure you have:
-
-1. **Python 3.9+** installed (`python --version` or `python3 --version`).
+1. **Python 3.9+** (`python --version`).
 2. **Neo4j Database (5.11+)**:
-   - **Option A (Cloud - Recommended)**: Free instance on [Neo4j AuraDB](https://neo4j.com/cloud/platform/aura-graph-database/).
-   - **Option B (Local)**: [Neo4j Desktop](https://neo4j.com/download/) or Docker (`docker run -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/your_password neo4j:5.20-community`).
+   - **Cloud (Recommended)**: Free instance on [Neo4j AuraDB](https://neo4j.com/cloud/platform/aura-graph-database/).
+   - **Local**: [Neo4j Desktop](https://neo4j.com/download/) or Docker (`docker run -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/your_password neo4j:5.20-community`).
 3. **Google Gemini API Key**:
-   - Get a free key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+   - Obtain a key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
 ---
 
@@ -209,11 +241,11 @@ Before getting started, make sure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/book-inventory-finder.git
+git clone https://github.com/theWalkingEcho/BookScout-AI.git
 cd book-inventory-finder
 ```
 
-### 2. Create and Activate a Virtual Environment
+### 2. Create & Activate Virtual Environment
 
 **On Windows (PowerShell):**
 ```powershell
@@ -229,27 +261,19 @@ source .venv/bin/activate
 
 ### 3. Install Dependencies
 
-You can install the dependencies across all modules:
-
 ```bash
-# 1. Install Indexer dependencies
+# Install all required component dependencies
 pip install -r backend/indexer/requirements.txt
-
-# 2. Install Chat API dependencies
 pip install -r backend/chat/requirements.txt
-
-# 3. Install Frontend UI dependencies
 pip install -r frontend/requirements.txt
 ```
 
-### 4. Create Your Environment Secrets File
+### 4. Create Secrets File
 
 ```bash
-# Copy the example file
 cp .env.example .env
 ```
-
-Open `.env` in your text editor and provide your actual `NEO4J_URI`, `NEO4J_PASSWORD`, and `GEMINI_API_KEY`.
+Fill in your `NEO4J_URI`, `NEO4J_PASSWORD`, and `GEMINI_API_KEY`.
 
 ---
 
@@ -257,96 +281,58 @@ Open `.env` in your text editor and provide your actual `NEO4J_URI`, `NEO4J_PASS
 
 ### Phase 1: Scraping & Indexing the Knowledge Graph
 
-The indexer CLI (`backend/indexer/run_indexer.py`) handles web crawling, data normalization, Gemini vector embedding generation, and Neo4j graph storage.
-
 ```bash
 cd backend/indexer
 ```
 
-#### Option 1: Full Refresh (Fresh Database)
-*Clears the existing database, creates graph constraints & vector indexes, scrapes all stores, and embeds every book.*
+#### Option 1: Full Refresh (Fresh Database Setup)
+*Clears existing graph data, sets constraints & vector indexes, scrapes configured stores including cover images, and embeds books.*
 ```bash
 python run_indexer.py --full-refresh --embed
 ```
 
-#### Option 2: Incremental Sync (Daily / Weekly Updates)
-*Preserves existing data, fetches new/updated listings, generates embeddings for new books, updates prices and in-stock statuses, and removes discontinued books.*
+#### Option 2: Incremental Sync (Sync Prices & Stock)
+*Preserves data, fetches new arrivals, updates prices and in-stock statuses, and embeds new items.*
 ```bash
 python run_indexer.py --embed
 ```
 
-#### Option 3: Embed Missing Books Only (No Scraping)
-*Scans the existing database for any books that lack vector embeddings and generates them using Gemini without scraping.*
+#### Option 3: Backfill Missing Embeddings (No Scraping)
+*Scans database for books lacking 3072-dimensional vector embeddings and generates them via Gemini.*
 ```bash
 python run_indexer.py --check-embeddings
 ```
 
 #### Option 4: Force Re-embedding All Books
-*Regenerates vector embeddings for all books in the database (useful when changing embedding dimensions or models).*
 ```bash
 python run_indexer.py --check-embeddings --reembed
 ```
-
-#### Option 5: Scrape Without Embeddings (Fast Crawl Test)
-*Tests scraper extraction without consuming Gemini API tokens.*
-```bash
-python run_indexer.py --no-embed
-```
-
-### Automated Indexing (GitHub Actions)
-
-This project includes a GitHub Actions workflow (`.github/workflows/indexer.yml`) that automates the scraper and embedding generation.
-
-It is scheduled to run:
-- **Daily (02:00 UTC)**: Checks for and generates any missing vector embeddings.
-- **Weekly (Sun 00:00 UTC)**: Runs an incremental sync to update prices, stock, and new arrivals.
-- **Monthly (1st at 00:00 UTC)**: Performs a full database refresh.
-
-You can also trigger these tasks manually from the **Actions** tab in GitHub by selecting the "Bookstore Indexer" workflow.
-
-**Required GitHub Secrets:**
-To allow GitHub Actions to run, navigate to your repository's **Settings > Secrets and variables > Actions > New repository secret** and add the following keys from your `.env` file:
-- `NEO4J_URI`
-- `NEO4J_USER`
-- `NEO4J_PASSWORD`
-- `NEO4J_DATABASE`
-- `GEMINI_API_KEY`
-- `STORE_CONFIGS_JSON` (Optional, if overriding default stores)
 
 ---
 
 ### Phase 2: Launching the Backend Chat API
 
-The FastAPI service powers the hybrid search engine, Cypher generation, and response synthesis.
-
-From the project root:
+From project root:
 ```bash
 uvicorn backend.chat.app:app --reload --port 8000
 ```
 
-Or from the `backend/chat` directory:
-```bash
-cd backend/chat
-uvicorn app:app --reload --port 8000
-```
-
 Once running:
 - **API Base URL**: `http://localhost:8000`
-- **Interactive Swagger Documentation**: `http://localhost:8000/docs`
-- **Health & Liveness Check**: `http://localhost:8000/health`
+- **Interactive Swagger Docs**: `http://localhost:8000/docs`
+- **Health Check**: `http://localhost:8000/health`
+- **Graph Schema**: `http://localhost:8000/schema`
 
 ---
 
 ### Phase 3: Launching the Frontend Chatbot UI
 
-In a new terminal window (with the virtual environment activated):
-
-From the project root:
+In a new terminal (with `.venv` activated), from project root:
 ```bash
 streamlit run frontend/streamlit_app.py
 ```
 
-The Streamlit UI will open automatically in your browser at `http://localhost:8501`.
+The app will open automatically at `http://localhost:8501`.
 
 ---
 
@@ -354,39 +340,37 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/health` | Service liveness check, database connectivity status, and node statistics. |
-| `GET` | `/schema` | Live Neo4j schema context, active node labels, and relationship patterns. |
-| `GET` | `/stores` | Array of all bookstore names indexed in the knowledge graph. |
-| `POST` | `/chat` | Natural language multi-store book search, comparison, and synthesis. |
-| `POST` | `/chat/stream` | Real-time NDJSON streaming endpoint for LLM tokens, sources, and suggestions. |
-| `POST` | `/search` | Direct hybrid search returning structured candidates without LLM synthesis. |
+| `GET` | `/health` | Liveness check, database connectivity, and graph node counts. |
+| `GET` | `/schema` | Live Neo4j schema context, node labels, and relationship patterns. |
+| `GET` | `/stores` | Returns array of all bookstore names indexed in graph. |
+| `POST` | `/chat` | Natural language book search, multi-store comparison, and synthesis. |
+| `POST` | `/chat/stream` | Real-time NDJSON streaming endpoint (yields `start`, `token`, and `done` events). |
+| `POST` | `/search` | Direct hybrid search returning raw structured candidates without LLM synthesis. |
 
-### `POST /chat` Request & Response Example
+### `POST /chat` Example
 
-#### Request Body
+#### Request
 ```json
 {
-  "query": "Which stores have 'Atomic Habits' in stock and what are their prices?",
+  "query": "Show me available books by James Clear and compare prices",
   "history": []
 }
 ```
 
-#### Response Body
+#### Response
 ```json
 {
-  "answer": "I found **Atomic Habits** by James Clear available across 2 bookstores:\n\n| Bookstore | Price | Stock Status | Link |\n| :--- | :--- | :--- | :--- |\n| **Store 1** | LKR 2,450.00 | ✅ In Stock | [View on Store 1](https://store1.com/product/atomic-habits) |\n| **Store 2** | LKR 2,800.00 | ✅ In Stock | [View on Store 2](https://store2.com/product/atomic-habits) |\n\n💡 *Store 1 offers the lowest price, saving you LKR 350.00.*",
-  "cypher_query": "MATCH (b:Book {normalizedTitle: 'atomic habits'})-[r:HAS_LISTING]->(s:Store) RETURN b, r, s",
+  "answer": "### 📚 Atomic Habits\n<img src=\"https://images.example.com/cover/atomic-habits.jpg\" alt=\"Atomic Habits\" width=\"180\" style=\"border-radius:8px; margin:10px 0; display:block;\" referrerpolicy=\"no-referrer\">\n\n**Author:** James Clear | **Category:** Self-Help\n\n| Bookstore | Price | Stock Status |\n| :--- | :--- | :--- |\n| **Store A** | LKR 2,450.00 | ✅ In Stock |\n| **Store B** | LKR 2,800.00 | ✅ In Stock |\n\n🏆 **Best Deal:** Store A offers the lowest price at LKR 2,450.00.",
+  "cypher_query": "MATCH (b:Book)-[r:HAS_LISTING]->(s:Store) WHERE b.normalizedTitle CONTAINS 'atomic habits' RETURN b, r, s",
   "records_count": 2,
   "suggestions": [
-    "Are there other self-help books under LKR 2500?",
-    "Show books by James Clear"
+    "Which store has the lowest prices?",
+    "Show books similar to Atomic Habits"
   ],
-  "execution_time_ms": 342.15,
-  "latency_breakdown": null,
-  "error": null,
+  "execution_time_ms": 312.45,
   "sources": [
-    "Atomic Habits - Store 1 (LKR 2450.00)",
-    "Atomic Habits - Store 2 (LKR 2800.00)"
+    "Atomic Habits - Store A (LKR 2450.00)",
+    "Atomic Habits - Store B (LKR 2800.00)"
   ]
 }
 ```
@@ -395,7 +379,7 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
 
 ## 🗄️ Database Graph Schema & Vector Indexes
 
-### Graph Data Model
+### Cypher Graph Schema
 
 ```cypher
 (:Book {
@@ -406,7 +390,7 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
     format: STRING,
     language: STRING,
     publisher: STRING,
-    coverImage: STRING,
+    coverImage: STRING,          // High-resolution cover image URL
     inStock: BOOLEAN,
     textEmbedding: LIST<FLOAT>   // 3072-dimensional Gemini vector
 })
@@ -438,7 +422,7 @@ The Streamlit UI will open automatically in your browser at `http://localhost:85
 }]->(:Store)
 ```
 
-### Constraints & Indexes Created Automatically
+### Automatic Constraints & Indexes
 
 ```cypher
 // Unique Constraints
@@ -466,65 +450,30 @@ FOR (b:Book) ON EACH [b.title, b.normalizedTitle, b.description];
 
 ## 💡 Sample Queries & Chatbot Capabilities
 
-Here are sample queries you can try in the Streamlit UI or via `POST /chat`:
-
-### 1. Multi-Store Price Comparison
-- *"Compare the prices of 'Harry Potter and the Philosopher's Stone' across all stores."*
-- *"Where is the cheapest place to buy 'Thinking, Fast and Slow'?"*
-
-### 2. Semantic & Thematic Book Discovery
-- *"Recommend dystopian science fiction novels exploring artificial intelligence."*
-- *"Find inspiring biographies of entrepreneurs and innovators."*
-
-### 3. Budget & Filter-Based Queries
-- *"Show me all available Python and Machine Learning books under LKR 3,500."*
-- *"List Sinhala translation fiction books in stock."*
-
-### 4. Conversational Follow-Ups & Memory
-- Turn 1: *"Do you have books by Yuval Noah Harari?"*
-- Turn 2: *"Which of those is the cheapest?"*
-- Turn 3: *"Is it currently in stock?"*
+- **Price Comparisons**: *"Compare the prices of 'Atomic Habits' across all stores."*
+- **Visual Discovery**: *"Show me popular fiction books with their cover images."*
+- **Budget Search**: *"Find machine learning books under LKR 4,000 in stock."*
+- **Author Filtering**: *"List all available books written by Walter Isaacson."*
+- **Conversational Memory**:
+  - Turn 1: *"Do you have books on finance?"*
+  - Turn 2: *"Which one is the cheapest?"*
 
 ---
 
 ## ❓ Troubleshooting & FAQ
 
 ### 1. `neo4j.exceptions.AuthError` or `ServiceUnavailable`
-- **Cause**: Incorrect database credentials or network firewall blocking the Bolt port.
-- **Fix**:
-  1. Double check `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD` in your `.env`.
-  2. For Neo4j AuraDB, make sure the URI protocol is `neo4j+s://` and your instance is not paused.
-  3. Ensure port `7687` is open and accessible.
+- Check `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD` in `.env`.
+- For Neo4j AuraDB, use `neo4j+s://` and ensure the database is active.
 
-### 2. `GEMINI_API_KEY is not set` or `GoogleAPICallError`
-- **Cause**: Missing API key or API rate limits exceeded.
-- **Fix**:
-  1. Check that `GEMINI_API_KEY` is present in `.env`.
-  2. Test your key at [Google AI Studio](https://aistudio.google.com/).
-  3. If rate-limited, decrease `SCRAPE_WORKERS` to `2` or `4` in `.env`.
+### 2. `GEMINI_API_KEY is not set`
+- Ensure your API key is in `.env` and valid on Google AI Studio.
 
-### 3. `Vector index dimension mismatch`
-- **Cause**: The vector index was created with a different dimension (e.g. 768) than the current model (3072).
-- **Fix**: Run a full refresh to rebuild the index with the current dimension:
-  ```bash
-  python backend/indexer/run_indexer.py --full-refresh --embed
-  ```
+### 3. Book Cover Images Not Rendering
+- The app uses `referrerpolicy="no-referrer"` in HTML image elements to bypass third-party hotlinking restrictions. Ensure your browser is not blocking external image domain requests.
 
-### 4. Scraper returns 0 listings
-- **Cause**: Website HTML layout changed.
-- **Fix**:
-  1. Verify target website URLs in `STORE_CONFIGS_JSON`.
-  2. Ensure `cloudscraper` and `beautifulsoup4` are up to date:
-     ```bash
-     pip install --upgrade cloudscraper beautifulsoup4
-     ```
-
-### 5. Frontend shows "Backend Offline"
-- **Cause**: The FastAPI server is not running or running on a different port.
-- **Fix**: Start the backend server on `http://localhost:8000`:
-  ```bash
-  uvicorn backend.chat.app:app --reload --port 8000
-  ```
+### 4. Vector index dimension mismatch
+- Run `python backend/indexer/run_indexer.py --full-refresh --embed` to rebuild the 3072-dimensional vector index.
 
 ---
 

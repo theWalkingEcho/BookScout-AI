@@ -12,3 +12,6 @@ __pycache__/
 
 # ignore ephemeral chat session files
 frontend/chat_sessions/
+
+# ignore test files
+scratch/*
