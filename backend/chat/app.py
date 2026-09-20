@@ -268,24 +268,6 @@ def chat_stream(request: ChatRequest):
 class TitleRequest(BaseModel):
     messages: List[MessageIn] = []
 
-
-@app.post("/generate-title", tags=["chat"])
-def generate_title(request: TitleRequest):
-    """
-    Generate a short AI conversation title from the first few chat messages.
-    Returns {"title": "..."}.
-    """
-    if _service is None:
-        return {"title": "New Conversation"}
-    try:
-        msgs = [{"role": m.role, "content": m.content} for m in request.messages[:3]]
-        title = _service.llm_service.generate_title(msgs)
-        return {"title": title or "New Conversation"}
-    except Exception as e:
-        logger.warning("Title generation failed: %s", e)
-        return {"title": "New Conversation"}
-
-
 @app.post("/search", response_model=DirectSearchResponse, tags=["search"])
 def direct_search(request: DirectSearchRequest):
     """

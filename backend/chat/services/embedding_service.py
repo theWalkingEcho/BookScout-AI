@@ -69,9 +69,9 @@ class QueryEmbeddingService:
                     )
                     return list(response["embedding"])
             except Exception as e:
-                wait_time = 2 ** attempt
+                wait_time = min(2 ** attempt, 8) + (attempt * 0.2)
                 logger.warning(
-                    "Query embedding attempt %d/%d failed: %s. Retrying in %ds...",
+                    "Query embedding attempt %d/%d failed: %s. Retrying in %.1fs...",
                     attempt, retries, e, wait_time,
                 )
                 if attempt < retries:

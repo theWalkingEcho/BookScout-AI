@@ -181,10 +181,25 @@ div[data-testid="stElementContainer"]:has([data-testid="stChatInput"]),
 }
 
 
-/* Chat messages */
+/* Chat messages & embedded book cover images */
 [data-testid="stChatMessage"] {
     border-radius: 14px !important;
     margin-bottom: 6px !important;
+}
+
+[data-testid="stChatMessage"] img {
+    max-height: 320px !important;
+    max-width: 220px !important;
+    object-fit: cover !important;
+    border-radius: 10px !important;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45) !important;
+    margin: 12px 0 16px 0 !important;
+    display: block !important;
+    transition: transform 0.2s ease !important;
+}
+
+[data-testid="stChatMessage"] img:hover {
+    transform: scale(1.04) !important;
 }
 
 
@@ -299,35 +314,217 @@ def _chat_stream(user_text: str, history: list):
 # Answer sanitiser — strips URLs / markdown links before display
 # ---------------------------------------------------------------------------
 
-_MD_LINK_RE = re.compile(r'\[([^\]]+)\]\([^)]*\)')   # [text](url) → text
-_BARE_URL_RE = re.compile(
-    r'https?://[^\s)>"]+',                             # bare https://... URLs
-    re.IGNORECASE,
-)
+FALLBACK_COVER_SVG = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='260' viewBox='0 0 180 260'><rect width='100%' height='100%' fill='%231e293b' rx='10'/><rect x='10' y='10' width='160' height='240' fill='none' stroke='%23334155' stroke-width='2' rx='6'/><text x='90' y='120' font-family='sans-serif' font-size='32' fill='%2364748b' text-anchor='middle'>📚</text><text x='90' y='155' font-family='sans-serif' font-size='12' fill='%2394a3b8' text-anchor='middle'>No Cover Available</text></svg>"
 
 
 def _sanitize_answer(text: str) -> str:
-    """Remove all hyperlinks and bare URLs from the LLM response."""
-    text = _MD_LINK_RE.sub(r'\1', text)   # keep link label, drop URL
-    text = _BARE_URL_RE.sub('', text)      # remove any remaining bare URLs
-    return text.strip()
+    """Remove hyperlinks and bare text URLs from the response while preserving and standardising embedded book cover images."""
+    if not text:
+        return ""
+
+    placeholders = []
+
+    def _mask_img(match):
+        img_str = match.group(0)
+        # Convert Markdown image syntax ![alt](url) to HTML <img>
+        md_m = re.match(r'!\[([^\]]*?)\]\((https?://[^\s)]+)\)', img_str)
+        if md_m:
+            alt, url = md_m.group(1), md_m.group(2)
+            img_str = f'<img src="{url}" alt="{alt}" width="180" style="border-radius:8px; margin:10px 0; display:block;" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'{FALLBACK_COVER_SVG}\';">'
+        elif img_str.lower().startswith("<img"):
+            if "onerror" not in img_str.lower():
+                img_str = img_str.replace(">", f' onerror="this.onerror=null;this.src=\'{FALLBACK_COVER_SVG}\';">', 1)
+            if "referrerpolicy" not in img_str.lower():
+                img_str = img_str.replace(">", ' referrerpolicy="no-referrer">', 1)
+        placeholders.append(img_str)
+        return f"___IMG_PLACEHOLDER_{len(placeholders) - 1}___"
+
+    # Mask HTML <img ...> tags (case insensitive, dotall for multi-line tags)
+    masked = re.sub(r'<img\s+[^>]*?>', _mask_img, text, flags=re.IGNORECASE | re.DOTALL)
+    # Mask Markdown images ![alt](url)
+    masked = re.sub(r'!\[[^\]]*?\]\([^\n]+?\)', _mask_img, masked)
+
+    # Strip markdown hyperlinks [text](url) -> text
+    masked = re.sub(r'\[([^\]]+)\]\([^\n)]*\)', r'\1', masked)
+
+    # Strip remaining unmasked bare http(s) URLs in text
+    masked = re.sub(r'https?://[^\s)>"]+', '', masked, flags=re.IGNORECASE)
+
+    # Restore protected image tags
+    for i, tag in enumerate(placeholders):
+        masked = masked.replace(f"___IMG_PLACEHOLDER_{i}___", tag)
+
+    return masked.strip()
+
+
+def _render_custom_stream(token_generator) -> str:
+    """
+    Streams response tokens live into Streamlit using st.markdown(..., unsafe_allow_html=True).
+    Filters image embed tags dynamically: when an image tag (<img ...> or ![alt](url)) is detected:
+      - Renders the image live in-place using st.markdown(..., unsafe_allow_html=True)
+      - Continues streaming the remaining response text in a new live placeholder without breaking the stream.
+    Returns the complete full answer string (including embedded images).
+    """
+    full_answer_parts = []
+    current_text_block = ""
+    current_placeholder = st.empty()
+
+    buffer = ""
+    is_image_url_re = re.compile(
+        r'\.(?:jpg|jpeg|png|webp|gif|svg)(?:\?.*)?$|/storage/product/|/product/|/covers?/',
+        re.IGNORECASE
+    )
+
+    def _flush_text(chunk: str):
+        nonlocal current_text_block
+        if chunk:
+            current_text_block += chunk
+            current_placeholder.markdown(_sanitize_answer(current_text_block), unsafe_allow_html=True)
+
+    for token in token_generator:
+        buffer += token
+
+        while buffer:
+            in_incomplete_html_img = bool(re.search(r'<img\b[^>]*$', buffer, re.IGNORECASE | re.DOTALL))
+            in_incomplete_md_img = bool(re.search(r'!\[[^\]]*$', buffer) or re.search(r'!\[[^\]]*\]\([^)]*$', buffer))
+
+            img_match = re.search(r'<img\s+[^>]*?>', buffer, re.IGNORECASE | re.DOTALL)
+            md_img_match = re.search(r'!\[([^\]]*?)\]\((https?://[^\s)]+)\)', buffer)
+            md_link_match = None if (in_incomplete_html_img or in_incomplete_md_img) else re.search(r'\[([^\]]+)\]\((https?://[^\s)]+)\)', buffer)
+            bare_url_match = None if (in_incomplete_html_img or in_incomplete_md_img) else re.search(r'(https?://[^\s)>"\]]+)([\s)>"\]]|\Z)', buffer, re.IGNORECASE)
+
+            matches = []
+            if img_match:
+                matches.append((img_match.start(), 'img', img_match))
+            if md_img_match:
+                matches.append((md_img_match.start(), 'md_img', md_img_match))
+            if md_link_match:
+                matches.append((md_link_match.start(), 'md_link', md_link_match))
+            if bare_url_match:
+                b_start = bare_url_match.start()
+                is_sub = False
+                for m in (img_match, md_img_match, md_link_match):
+                    if m and m.start() <= b_start < m.end():
+                        is_sub = True
+                        break
+                if not is_sub:
+                    matches.append((b_start, 'bare_url', bare_url_match))
+
+            if matches:
+                matches.sort(key=lambda x: x[0])
+                first_pos, match_type, m = matches[0]
+
+                if first_pos > 0:
+                    _flush_text(buffer[:first_pos])
+                    buffer = buffer[first_pos:]
+
+                if match_type == 'img':
+                    tag_str = m.group(0)
+                    src_m = re.search(r'src=["\']([^"\']+)["\']', tag_str, re.IGNORECASE)
+                    alt_m = re.search(r'alt=["\']([^"\']+)["\']', tag_str, re.IGNORECASE)
+                    src_url = src_m.group(1) if src_m else ""
+                    alt_txt = alt_m.group(1) if alt_m else "Book Cover"
+
+                    if src_url:
+                        img_html = f'<img src="{src_url}" alt="{alt_txt}" width="180" style="border-radius:10px; margin:12px 0 16px 0; display:block; box-shadow:0 6px 18px rgba(0,0,0,0.45);" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'{FALLBACK_COVER_SVG}\';">'
+                    else:
+                        img_html = tag_str
+
+                    if current_text_block:
+                        current_placeholder.markdown(_sanitize_answer(current_text_block), unsafe_allow_html=True)
+                        full_answer_parts.append(_sanitize_answer(current_text_block))
+
+                    # Render image LIVE IN-PLACE!
+                    st.markdown(img_html, unsafe_allow_html=True)
+                    full_answer_parts.append(f"\n\n{img_html}\n\n")
+
+                    current_text_block = ""
+                    current_placeholder = st.empty()
+                    buffer = buffer[len(m.group(0)):]
+
+                elif match_type == 'md_img':
+                    alt, url = m.group(1), m.group(2)
+                    img_html = f'<img src="{url}" alt="{alt}" width="180" style="border-radius:10px; margin:12px 0 16px 0; display:block; box-shadow:0 6px 18px rgba(0,0,0,0.45);" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'{FALLBACK_COVER_SVG}\';">'
+
+                    if current_text_block:
+                        current_placeholder.markdown(_sanitize_answer(current_text_block), unsafe_allow_html=True)
+                        full_answer_parts.append(_sanitize_answer(current_text_block))
+
+                    st.markdown(img_html, unsafe_allow_html=True)
+                    full_answer_parts.append(f"\n\n{img_html}\n\n")
+
+                    current_text_block = ""
+                    current_placeholder = st.empty()
+                    buffer = buffer[len(m.group(0)):]
+
+                elif match_type == 'md_link':
+                    text, url = m.group(1), m.group(2)
+                    if is_image_url_re.search(url):
+                        img_html = f'<img src="{url}" alt="{text}" width="180" style="border-radius:10px; margin:12px 0 16px 0; display:block; box-shadow:0 6px 18px rgba(0,0,0,0.45);" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'{FALLBACK_COVER_SVG}\';">'
+                        if current_text_block:
+                            current_placeholder.markdown(_sanitize_answer(current_text_block), unsafe_allow_html=True)
+                            full_answer_parts.append(_sanitize_answer(current_text_block))
+                        st.markdown(img_html, unsafe_allow_html=True)
+                        full_answer_parts.append(f"\n\n{img_html}\n\n")
+                        current_text_block = ""
+                        current_placeholder = st.empty()
+                    else:
+                        _flush_text(text)
+                    buffer = buffer[len(m.group(0)):]
+
+                elif match_type == 'bare_url':
+                    url, boundary = m.group(1), m.group(2)
+                    if is_image_url_re.search(url):
+                        img_html = f'<img src="{url}" width="180" style="border-radius:10px; margin:12px 0 16px 0; display:block; box-shadow:0 6px 18px rgba(0,0,0,0.45);" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'{FALLBACK_COVER_SVG}\';">'
+                        if current_text_block:
+                            current_placeholder.markdown(_sanitize_answer(current_text_block), unsafe_allow_html=True)
+                            full_answer_parts.append(_sanitize_answer(current_text_block))
+                        st.markdown(img_html, unsafe_allow_html=True)
+                        full_answer_parts.append(f"\n\n{img_html}\n\n")
+                        current_text_block = ""
+                        current_placeholder = st.empty()
+                        _flush_text(boundary)
+                    else:
+                        _flush_text(boundary)
+                    buffer = buffer[len(url) + len(boundary):]
+                continue
+
+            if in_incomplete_html_img or in_incomplete_md_img:
+                break
+
+            if re.search(r'<[a-zA-Z]*$', buffer):
+                break
+            if re.search(r'\[[^\]]*$', buffer) or re.search(r'\[[^\]]*\]\([^)]*$', buffer):
+                break
+            if re.search(r'https?://[^\s)>"\]]*$', buffer, re.IGNORECASE):
+                break
+
+            buf_len = len(buffer)
+            safe_len = buf_len
+            for i in range(1, min(12, buf_len + 1)):
+                suffix = buffer[-i:]
+                if any(p.startswith(suffix.lower()) for p in ("<img", "![", "[", "http://", "https://")):
+                    safe_len = buf_len - i
+                    break
+
+            if safe_len > 0:
+                _flush_text(buffer[:safe_len])
+                buffer = buffer[safe_len:]
+            else:
+                break
+
+    if buffer:
+        _flush_text(buffer)
+
+    if current_text_block:
+        current_placeholder.markdown(_sanitize_answer(current_text_block), unsafe_allow_html=True)
+        full_answer_parts.append(_sanitize_answer(current_text_block))
+
+    return "".join(full_answer_parts)
 
 
 def _format_timing_badge(msg: dict) -> str:
-    """Returns HTML caption for total execution time and latency breakdown."""
-    exec_time = msg.get("execution_time_ms")
-    breakdown = msg.get("latency_breakdown")
-    if exec_time and exec_time > 0:
-        sec = exec_time / 1000.0
-        if breakdown and isinstance(breakdown, dict):
-            ret_sec = (breakdown.get("retrieval_ms") or 0) / 1000.0
-            syn_sec = (breakdown.get("synthesis_ms") or 0) / 1000.0
-            return (
-                f'<div style="font-size: 11px; color: #64748b; margin-top: 6px; font-weight: 500;">'
-                f'⚡ Answered in {sec:.2f}s &nbsp;•&nbsp; Retrieval: {ret_sec:.2f}s | Synthesis: {syn_sec:.2f}s'
-                f'</div>'
-            )
-        return f'<div style="font-size: 11px; color: #64748b; margin-top: 6px; font-weight: 500;">⚡ Answered in {sec:.2f}s</div>'
+    """Returns HTML caption for total execution time and latency breakdown (Hidden from UI per user request)."""
     return ""
 
 
@@ -447,7 +644,7 @@ else:
             content = msg["content"]
             if msg["role"] == "assistant":
                 content = _sanitize_answer(content)
-            st.markdown(content)
+            st.markdown(content, unsafe_allow_html=True)
             if msg["role"] == "assistant":
                 badge_html = _format_timing_badge(msg)
                 if badge_html:
@@ -500,7 +697,7 @@ if query_to_run:
             unsafe_allow_html=True,
         )
 
-        def stream_consumer():
+        def raw_token_consumer():
             for event in _chat_stream(query_to_run, history_payload):
                 ev_type = event.get("type")
                 if ev_type == "status":
@@ -526,7 +723,7 @@ if query_to_run:
                     status_placeholder.empty()
                     collected_meta["error"] = event.get("error")
 
-        answer = st.write_stream(stream_consumer())
+        answer = _render_custom_stream(raw_token_consumer())
         status_placeholder.empty()
 
         if collected_meta["error"] and not answer:
@@ -545,11 +742,6 @@ if query_to_run:
             "latency_breakdown": collected_meta.get("latency_breakdown"),
         }
         messages.append(new_assistant_msg)
-
-        # Render timing badge for the live response
-        badge_html = _format_timing_badge(new_assistant_msg)
-        if badge_html:
-            st.markdown(badge_html, unsafe_allow_html=True)
 
         # Render follow-up suggestions immediately under the streamed response
         sug_list = collected_meta.get("suggestions", [])

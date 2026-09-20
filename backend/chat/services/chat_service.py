@@ -22,12 +22,16 @@ except ImportError:
 try:
     from repositories.neo4j_reader import IGraphDatabaseReader
     from repositories.neo4j_search import Neo4jSearchService
-    from services.gemini_service import ILLMServiceClient
+    from services.gemini_service import ILLMServiceClient, sanitize_authors
 except ImportError:
     try:
         from chat.repositories.neo4j_reader import IGraphDatabaseReader
         from chat.repositories.neo4j_search import Neo4jSearchService
-        from chat.services.gemini_service import ILLMServiceClient
+        from chat.services.gemini_service import ILLMServiceClient, sanitize_authors
+    except ImportError:
+        from backend.chat.repositories.neo4j_reader import IGraphDatabaseReader
+        from backend.chat.repositories.neo4j_search import Neo4jSearchService
+        from backend.chat.services.gemini_service import ILLMServiceClient, sanitize_authors
     except ImportError:
         from backend.chat.repositories.neo4j_reader import IGraphDatabaseReader
         from backend.chat.repositories.neo4j_search import Neo4jSearchService
@@ -297,11 +301,13 @@ class ChatQueryService:
         """Trims verbose descriptions and raw vectors from book records to minimize synthesis prompt token count."""
         compacted = []
         for r in records:
+            cover = r.get("coverImage") or r.get("cover_image")
             entry = {
                 "title": r.get("title"),
                 "isbn": r.get("isbn"),
-                "authors": r.get("authors"),
+                "authors": sanitize_authors(r.get("authors")),
                 "categories": r.get("categories"),
+                "coverImage": cover,
             }
             listings = r.get("listings")
             if isinstance(listings, list):
@@ -412,10 +418,11 @@ class ChatQueryService:
                 )
         except Exception as e:
             logger.error("Response synthesis failed: %s", e)
-            answer = (
-                f"Found {len(merged_records)} record(s) in the database, "
-                f"but encountered an error during response synthesis: {str(e)}"
-            )
+            safe_err = self.llm_service._sanitize_error_message(e)
+            if merged_records:
+                answer = self.llm_service._build_fallback_markdown(merged_records, error_context=safe_err)
+            else:
+                answer = f"⚠️ **Notice:** Natural-language AI synthesis is temporarily limited ({safe_err}). Please try again in a few minutes or later."
             suggestions = [
                 "Which store has the lowest prices?",
                 "Compare prices for Atomic Habits",
@@ -564,6 +571,11 @@ class ChatQueryService:
                 "total_ms": round(total_ms, 2),
             }
 
+            logger.info(
+                "⚡ Stream chat completed: Answered in %.2fs • Retrieval: %.2fs | Synthesis: %.2fs (Total: %.2f ms)",
+                total_ms / 1000.0, retrieval_ms / 1000.0, synthesis_ms / 1000.0, total_ms
+            )
+
             yield {
                 "type": "done",
                 "suggestions": final_suggestions,
@@ -574,7 +586,11 @@ class ChatQueryService:
             }
         except Exception as e:
             logger.error("Response synthesis stream error: %s", e)
-            err_msg = f"Found {len(merged_records)} record(s) in the database, but encountered an error during streaming: {str(e)}"
+            safe_err = self.llm_service._sanitize_error_message(e)
+            if merged_records:
+                err_msg = self.llm_service._build_fallback_markdown(merged_records, error_context=safe_err)
+            else:
+                err_msg = f"⚠️ **Notice:** Natural-language AI synthesis is temporarily limited ({safe_err}). Please try again in a few minutes or later."
             yield {"type": "token", "content": err_msg}
             synthesis_ms = (time.perf_counter() - t_synth_start) * 1000.0
             total_ms = (time.perf_counter() - start_time) * 1000.0
