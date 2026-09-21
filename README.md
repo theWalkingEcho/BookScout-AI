@@ -1,4 +1,4 @@
-# 📚 BookScout AI — AI-Powered Book Discovery
+# 📚 BookScout AI — Your next great read, found instantly
 
 > **An intelligent, multi-store bookstore inventory aggregator, knowledge graph, visual book discoverer, and AI shopping assistant powered by Neo4j, Google Gemini, FastAPI, and Streamlit.**
 
