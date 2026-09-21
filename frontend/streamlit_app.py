@@ -1,5 +1,5 @@
 """
-Streamlit Chatbot UI for BookScout AI — AI-Powered Book Discovery.
+Streamlit Chatbot UI for BookScout AI — Your next great read, found instantly.
 Client-facing demo — no technical/sensitive information exposed.
 """
 
@@ -26,7 +26,7 @@ _API_URL = os.getenv("API_URL", "http://localhost:8000")
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="BookScout AI — AI-Powered Book Discovery",
+    page_title="BookScout AI — Your next great read, found instantly",
     page_icon="📚",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -593,7 +593,7 @@ st.markdown(f"""
         📖 BookScout AI
     </div>
     <div style="font-size: 12px; color: #64748b; margin-top: 5px;">
-        AI-Powered Book Discovery &nbsp;•&nbsp;
+        Your next great read, found instantly &nbsp;•&nbsp;
         <span class="status-dot {dot_cls}"></span>
         <span style="color: #94a3b8; font-weight: 500;">{status_txt}</span>
     </div>

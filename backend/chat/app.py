@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="BookScout AI — AI-Powered Book Discovery",
+    title="BookScout AI — Your next great read, found instantly",
     description="Natural-language and hybrid semantic search over the Sri Lankan bookstore inventory knowledge graph.",
     version="1.1.0",
 )
